@@ -253,29 +253,10 @@ const Interview = () => {
       const { data, error: fnError } = await supabase.functions.invoke("elevenlabs-signed-url");
       if (fnError || !data?.signed_url) throw new Error(fnError?.message || "Failed to get signed URL");
 
-      let overrides: Record<string, any> | undefined;
-      if (jobRoleId) {
-        const { data: roleData } = await supabase.from("job_roles").select("*").eq("id", jobRoleId).single();
-        const roleName = roleData ? `${roleData.job_title} at ${roleData.company_name}` : "";
-        const firstTopic = topic?.coreConcepts?.[0] || topic?.title || "";
-        overrides = {
-          agent: {
-            prompt: {
-              prompt: `You are conducting a technical interview for the role of "${roleName}". The candidate is being assessed on "${topic?.title}". Core concepts to probe: ${topic?.coreConcepts?.join(", ")}. Start by asking about "${firstTopic}" and progressively go deeper. Be professional but slightly adversarial — probe for genuine understanding vs surface-level answers.`,
-            },
-          },
-        };
-      } else {
-        overrides = {
-          agent: {
-            prompt: {
-              prompt: `You are conducting a technical interview on "${topic?.title}". Core concepts to probe: ${topic?.coreConcepts?.join(", ")}. Start with "${topic?.coreConcepts?.[0] || topic?.title}" and progressively go deeper. Be professional but slightly adversarial.`,
-            },
-          },
-        };
-      }
-
-      await conversation.startSession({ signedUrl: data.signed_url, overrides });
+      // Connect without overrides — the agent's prompt and first message
+      // are configured in the ElevenLabs dashboard. Overrides for prompt/firstMessage
+      // are rejected by the agent config (error 1008).
+      await conversation.startSession({ signedUrl: data.signed_url });
       startRecording();
     } catch (err) {
       console.error("Failed to start interview:", err);
