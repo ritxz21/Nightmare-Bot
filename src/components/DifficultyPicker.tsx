@@ -12,6 +12,13 @@ const INTENSITY_CLASSES: Record<number, string> = {
   3: "difficulty-pulse-4",
 };
 
+const INDICATOR_CLASSES: Record<number, string> = {
+  0: "animate-[diff-dot-gentle_3s_ease-in-out_infinite]",
+  1: "animate-[diff-dot-moderate_2s_ease-in-out_infinite]",
+  2: "animate-[diff-dot-aggressive_1.2s_ease-in-out_infinite]",
+  3: "animate-[diff-dot-ruthless_0.5s_ease-in-out_infinite]",
+};
+
 export const DifficultyPicker = ({ selected, onSelect }: DifficultyPickerProps) => {
   return (
     <div className="w-full max-w-3xl">
@@ -35,7 +42,7 @@ export const DifficultyPicker = ({ selected, onSelect }: DifficultyPickerProps) 
             >
               <div
                 className={`absolute top-3 right-3 w-2 h-2 rounded-full transition-all duration-300 ${
-                  isSelected ? "bg-primary animate-pulse-glow" : "bg-muted-foreground/20"
+                  isSelected ? `bg-primary ${INDICATOR_CLASSES[index]}` : "bg-muted-foreground/20"
                 }`}
               />
               <div className="text-2xl mb-2">{diff.emoji}</div>
