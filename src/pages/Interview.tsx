@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useConversation } from "@elevenlabs/react";
 import { TOPICS } from "@/lib/topics";
 import { VoiceOrb } from "@/components/VoiceOrb";
@@ -7,6 +7,7 @@ import { TranscriptPanel, TranscriptEntry } from "@/components/TranscriptPanel";
 import { BluffMeter } from "@/components/BluffMeter";
 import { KnowledgeMap, ConceptNode } from "@/components/KnowledgeMap";
 import { supabase } from "@/integrations/supabase/client";
+import { DifficultyLevel, DEFAULT_DIFFICULTY, DIFFICULTIES } from "@/lib/difficulty";
 
 interface AnalysisResult {
   concepts_mentioned_clearly: string[];
@@ -21,8 +22,24 @@ interface AnalysisResult {
 
 const Interview = () => {
   const { topicId } = useParams<{ topicId: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const topic = TOPICS.find((t) => t.id === topicId);
+  const difficulty = (searchParams.get("difficulty") as DifficultyLevel) || DEFAULT_DIFFICULTY;
+  const diffConfig = DIFFICULTIES.find((d) => d.id === difficulty);
+
+  // Support both predefined topics and custom resume-based topics
+  const topic = (() => {
+    const predefined = TOPICS.find((t) => t.id === topicId);
+    if (predefined) return predefined;
+    const resumeTopicParam = searchParams.get("resumeTopic");
+    if (resumeTopicParam) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(resumeTopicParam));
+        return { id: parsed.id, title: parsed.title, description: "", icon: "📄", coreConcepts: parsed.coreConcepts };
+      } catch { return null; }
+    }
+    return null;
+  })();
 
   const [voiceStatus, setVoiceStatus] = useState<"idle" | "connecting" | "listening" | "speaking">("idle");
   const [bluffScore, setBluffScore] = useState(0);
@@ -45,11 +62,10 @@ const Interview = () => {
     }
   }, [topic]);
 
-  // Create a new session in the database
   const createSession = useCallback(async () => {
     if (!topic) return;
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return; // Skip persistence for unauthenticated users
+    if (!user) return;
     const { data, error: insertError } = await supabase
       .from("interview_sessions")
       .insert({
@@ -64,7 +80,6 @@ const Interview = () => {
     sessionIdRef.current = data.id;
   }, [topic]);
 
-  // Persist session state to the database
   const persistSession = useCallback(async (updates: Record<string, unknown>) => {
     if (!sessionIdRef.current) return;
     const { error: updateError } = await supabase
@@ -84,6 +99,7 @@ const Interview = () => {
           userResponse: userText,
           topic: topic.title,
           coreConcepts: topic.coreConcepts,
+          difficulty,
           previousAnalysis: lastAnalysisRef.current
             ? { bluff_probability: lastAnalysisRef.current.bluff_probability, missing_concepts: lastAnalysisRef.current.concepts_missing }
             : null,
@@ -96,7 +112,6 @@ const Interview = () => {
       lastAnalysisRef.current = analysis;
       setBluffScore(analysis.bluff_probability);
 
-      // Track bluff history
       bluffHistoryRef.current = [
         ...bluffHistoryRef.current,
         { timestamp: new Date().toISOString(), score: analysis.bluff_probability },
@@ -113,7 +128,6 @@ const Interview = () => {
           return concept;
         });
 
-        // Persist updated state
         persistSession({
           bluff_history: bluffHistoryRef.current,
           concept_coverage: updated,
@@ -133,7 +147,7 @@ const Interview = () => {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [topic, persistSession]);
+  }, [topic, difficulty, persistSession]);
 
   const scheduleAnalysis = useCallback((text: string) => {
     pendingUserTextRef.current += " " + text;
@@ -159,7 +173,6 @@ const Interview = () => {
       if (entry.text) {
         transcriptRef.current = [...transcriptRef.current, entry];
         setTranscript([...transcriptRef.current]);
-        // Persist transcript
         persistSession({ transcript: transcriptRef.current.map((e) => ({ role: e.role, text: e.text, timestamp: e.timestamp.toISOString() })) });
         if (payload.role === "user") scheduleAnalysis(entry.text);
       }
@@ -171,7 +184,6 @@ const Interview = () => {
     },
   });
 
-  // Keep ref in sync
   conversationRef.current = conversation;
 
   useEffect(() => {
@@ -229,6 +241,11 @@ const Interview = () => {
               <div className="w-2 h-2 rounded-full bg-primary animate-pulse-glow" />
               <span className="text-sm font-mono text-muted-foreground tracking-wider uppercase">{topic.title}</span>
             </div>
+            {diffConfig && (
+              <span className="text-xs font-mono text-muted-foreground bg-secondary px-2 py-0.5 rounded">
+                {diffConfig.emoji} {diffConfig.label}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {isAnalyzing && <span className="text-[10px] font-mono text-muted-foreground animate-pulse">analyzing...</span>}

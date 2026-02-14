@@ -6,6 +6,20 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+interface DifficultyWeights {
+  vaguenessWeight: number;
+  missingWeight: number;
+  confidenceWeight: number;
+  adversarialLevel: string;
+}
+
+const DIFFICULTY_MAP: Record<string, DifficultyWeights> = {
+  "lightly-grilled": { vaguenessWeight: 0.25, missingWeight: 0.3, confidenceWeight: 0.1, adversarialLevel: "gentle" },
+  "medium-rare": { vaguenessWeight: 0.35, missingWeight: 0.35, confidenceWeight: 0.15, adversarialLevel: "moderate" },
+  "slow-burnt": { vaguenessWeight: 0.4, missingWeight: 0.4, confidenceWeight: 0.2, adversarialLevel: "aggressive" },
+  "roasted": { vaguenessWeight: 0.45, missingWeight: 0.45, confidenceWeight: 0.25, adversarialLevel: "ruthless" },
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -15,12 +29,24 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const { userResponse, topic, coreConcepts, previousAnalysis } = await req.json();
+    const { userResponse, topic, coreConcepts, previousAnalysis, difficulty } = await req.json();
+
+    const weights = DIFFICULTY_MAP[difficulty] || DIFFICULTY_MAP["medium-rare"];
+
+    const difficultyPrompt = {
+      gentle: "Be encouraging but still assess knowledge accurately. Accept partial explanations as shallow understanding. Give the student the benefit of the doubt.",
+      moderate: "Be fair but probing. Expect reasonable depth. Accept mentions with some context as shallow understanding.",
+      aggressive: "Be relentless in your follow-ups. Demand specific details, examples, and trade-offs. Shallow mentions barely count.",
+      ruthless: "Be brutal. Only accept deep, precise, technically accurate explanations as clear. Everything else is shallow or missing. Find every gap and exploit it.",
+    }[weights.adversarialLevel];
 
     const systemPrompt = `You are an expert knowledge assessor for the topic "${topic}". 
+Difficulty level: ${weights.adversarialLevel.toUpperCase()}
+${difficultyPrompt}
+
 Your job is to analyze a student's explanation and detect:
 1. Which core concepts they mentioned clearly with depth
-2. Which concepts they mentioned but only shallowly  
+2. Which concepts they mentioned but only shallowly (be MORE LENIENT in classifying shallow — even a brief mention with some context counts)
 3. Which core concepts are completely missing
 4. How vague or precise their language is
 5. Whether they use confident-sounding language to mask lack of understanding (bluffing)
@@ -61,7 +87,7 @@ IMPORTANT: Return your analysis by calling the analyze_response function.`;
                   concepts_mentioned_shallowly: {
                     type: "array",
                     items: { type: "string" },
-                    description: "Concepts mentioned but without real understanding",
+                    description: "Concepts mentioned but without deep understanding — be lenient, even brief context counts",
                   },
                   concepts_missing: {
                     type: "array",
@@ -82,7 +108,7 @@ IMPORTANT: Return your analysis by calling the analyze_response function.`;
                   },
                   follow_up_question: {
                     type: "string",
-                    description: "A specific, targeted question that exposes the weakest knowledge gap. Should be adversarial but fair.",
+                    description: "A specific, targeted question that exposes the weakest knowledge gap. Should match the difficulty level.",
                   },
                   assessment_note: {
                     type: "string",
@@ -134,12 +160,12 @@ IMPORTANT: Return your analysis by calling the analyze_response function.`;
 
     const analysis = JSON.parse(toolCall.function.arguments);
 
-    // Calculate bluff probability using the formula
+    // Calculate bluff probability using difficulty-aware weights
     const missingRatio = analysis.concepts_missing.length / coreConcepts.length;
     const bluffProbability =
-      (analysis.vagueness_score / 10) * 0.4 +
-      missingRatio * 0.4 +
-      (analysis.confidence_language_detected ? 1 : 0) * 0.2;
+      (analysis.vagueness_score / 10) * weights.vaguenessWeight +
+      missingRatio * weights.missingWeight +
+      (analysis.confidence_language_detected ? 1 : 0) * weights.confidenceWeight;
 
     const result = {
       ...analysis,
