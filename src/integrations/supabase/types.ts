@@ -327,6 +327,10 @@ export type Database = {
           status: string
         }[]
       }
+      user_has_invite_for_role: {
+        Args: { _job_role_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "interviewer" | "interviewee"
