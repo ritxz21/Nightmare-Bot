@@ -158,7 +158,7 @@ const InterviewerView = () => {
             {jobRoles.map((jr) => {
               const invites = invitesByRole[jr.id] || [];
               const sessions = sessionsByRole[jr.id] || [];
-              const completedSessions = sessions.filter((s) => s.status === "completed");
+              const completedSessions = sessions.filter((s) => s.status === "completed" || s.status === "disconnected");
               const activeSessions = sessions.filter((s) => s.status === "in_progress");
               const completedInvites = invites.filter((i) => i.status === "completed").length;
               const rejectedInvites = invites.filter((i) => i.status === "rejected").length;
