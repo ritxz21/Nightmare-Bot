@@ -63,6 +63,11 @@ const Interview = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const startingRef = useRef(false);
+  const intentionalEndRef = useRef(false);
+
+  // Use refs for callbacks to avoid infinite re-render loops with useConversation
+  const scheduleAnalysisRef = useRef<(text: string) => void>(() => {});
+  const persistSessionRef = useRef<(updates: Record<string, unknown>) => Promise<void>>(async () => {});
 
   useEffect(() => {
     if (topic) {
@@ -70,27 +75,29 @@ const Interview = () => {
     }
   }, [topic]);
 
+  const persistSession = useCallback(async (updates: Record<string, unknown>) => {
+    if (!sessionIdRef.current) return;
+    const { error: updateError } = await supabase
+      .from("interview_sessions")
+      .update(updates)
+      .eq("id", sessionIdRef.current);
+    if (updateError) console.error("Failed to persist session:", updateError);
+  }, []);
+
+  persistSessionRef.current = persistSession;
+
   const createSession = useCallback(async () => {
     if (!topic) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Check for existing in-progress session for this topic to prevent duplicates
-    const { data: existingList } = await supabase
+    // Mark any old in-progress sessions as disconnected first
+    await supabase
       .from("interview_sessions")
-      .select("id")
+      .update({ status: "disconnected" })
       .eq("user_id", user.id)
       .eq("topic_id", topic.id)
-      .eq("status", "in_progress")
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    const existing = existingList?.[0];
-
-    if (existing) {
-      sessionIdRef.current = existing.id;
-      return;
-    }
+      .eq("status", "in_progress");
 
     const { data, error: insertError } = await supabase
       .from("interview_sessions")
@@ -107,15 +114,6 @@ const Interview = () => {
     if (insertError) { console.error("Failed to create session:", insertError); return; }
     sessionIdRef.current = data.id;
   }, [topic, jobRoleId]);
-
-  const persistSession = useCallback(async (updates: Record<string, unknown>) => {
-    if (!sessionIdRef.current) return;
-    const { error: updateError } = await supabase
-      .from("interview_sessions")
-      .update(updates)
-      .eq("id", sessionIdRef.current);
-    if (updateError) console.error("Failed to persist session:", updateError);
-  }, []);
 
   const analyzeUserResponse = useCallback(async (userText: string) => {
     if (!topic || !userText.trim()) return;
@@ -143,7 +141,7 @@ const Interview = () => {
           if (analysis.concepts_mentioned_shallowly.some((c) => c.toLowerCase() === concept.name.toLowerCase())) return { name: concept.name, status: concept.status === "clear" ? "clear" as const : "shallow" as const };
           return concept;
         });
-        persistSession({ bluff_history: bluffHistoryRef.current, concept_coverage: updated, final_bluff_score: analysis.bluff_probability });
+        persistSessionRef.current({ bluff_history: bluffHistoryRef.current, concept_coverage: updated, final_bluff_score: analysis.bluff_probability });
         return updated;
       });
       if (analysis.follow_up_question && conversationRef.current?.status === "connected") {
@@ -156,7 +154,7 @@ const Interview = () => {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [topic, difficulty, persistSession]);
+  }, [topic, difficulty]);
 
   const scheduleAnalysis = useCallback((text: string) => {
     pendingUserTextRef.current += " " + text;
@@ -167,13 +165,16 @@ const Interview = () => {
     }, 2000);
   }, [analyzeUserResponse]);
 
+  scheduleAnalysisRef.current = scheduleAnalysis;
+
+  // Stable callbacks via refs to prevent useConversation from re-initializing
   const conversation = useConversation({
     onConnect: () => { setVoiceStatus("listening"); setError(null); },
     onDisconnect: () => {
       setVoiceStatus("idle");
-      // If session is still in_progress when disconnected, mark it as disconnected
-      if (sessionIdRef.current) {
-        persistSession({ status: "disconnected" });
+      // Only mark as disconnected if it wasn't an intentional end
+      if (sessionIdRef.current && !intentionalEndRef.current) {
+        persistSessionRef.current({ status: "disconnected" });
       }
     },
     onMessage: (payload) => {
@@ -181,8 +182,8 @@ const Interview = () => {
       if (entry.text) {
         transcriptRef.current = [...transcriptRef.current, entry];
         setTranscript([...transcriptRef.current]);
-        persistSession({ transcript: transcriptRef.current.map((e) => ({ role: e.role, text: e.text, timestamp: e.timestamp.toISOString() })) });
-        if (payload.role === "user") scheduleAnalysis(entry.text);
+        persistSessionRef.current({ transcript: transcriptRef.current.map((e) => ({ role: e.role, text: e.text, timestamp: e.timestamp.toISOString() })) });
+        if (payload.role === "user") scheduleAnalysisRef.current(entry.text);
       }
     },
     onError: (err) => { console.error("ElevenLabs error:", err); setError("Voice connection failed. Please try again."); setVoiceStatus("idle"); },
@@ -191,14 +192,15 @@ const Interview = () => {
   conversationRef.current = conversation;
 
   useEffect(() => {
-    if (conversation.status === "connected") setVoiceStatus(conversation.isSpeaking ? "speaking" : "listening");
+    if (conversation.status === "connected") {
+      setVoiceStatus(conversation.isSpeaking ? "speaking" : "listening");
+    }
   }, [conversation.isSpeaking, conversation.status]);
 
   // Mark session as disconnected if user closes/navigates away
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (sessionIdRef.current) {
-        // Fire-and-forget update via supabase client
         supabase.from("interview_sessions").update({ status: "disconnected" }).eq("id", sessionIdRef.current).then();
       }
     };
@@ -227,14 +229,12 @@ const Interview = () => {
     mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
     setIsRecording(false);
 
-    // Upload video
     const { data: { user } } = await supabase.auth.getUser();
     if (user && sessionIdRef.current && recordedChunksRef.current.length > 0) {
       const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
       const path = `${user.id}/${sessionIdRef.current}.webm`;
       const { error: uploadErr } = await supabase.storage.from("interview-videos").upload(path, blob);
       if (!uploadErr) {
-        // Store the storage path (not public URL) since bucket is private
         await persistSession({ video_url: path });
       }
     }
@@ -243,6 +243,7 @@ const Interview = () => {
   const handleStartInterview = useCallback(async () => {
     if (startingRef.current) return;
     startingRef.current = true;
+    intentionalEndRef.current = false;
     setVoiceStatus("connecting");
     setError(null);
     try {
@@ -251,7 +252,6 @@ const Interview = () => {
       const { data, error: fnError } = await supabase.functions.invoke("elevenlabs-signed-url");
       if (fnError || !data?.signed_url) throw new Error(fnError?.message || "Failed to get signed URL");
 
-      // Build personalized overrides based on job role and topic
       let overrides: Record<string, any> | undefined;
       if (jobRoleId) {
         const { data: roleData } = await supabase.from("job_roles").select("*").eq("id", jobRoleId).single();
@@ -277,7 +277,6 @@ const Interview = () => {
       }
 
       await conversation.startSession({ signedUrl: data.signed_url, overrides });
-      // Auto-start video recording
       startRecording();
     } catch (err) {
       console.error("Failed to start interview:", err);
@@ -289,11 +288,11 @@ const Interview = () => {
   }, [conversation, createSession, topic, jobRoleId]);
 
   const handleEndInterview = useCallback(async () => {
+    intentionalEndRef.current = true;
     const sid = sessionIdRef.current;
-    sessionIdRef.current = null; // Clear before endSession to prevent onDisconnect from marking as "disconnected"
+    sessionIdRef.current = null;
     await stopRecording();
     await conversation.endSession();
-    // Update invite status if company interview
     if (inviteId) {
       await supabase.from("interview_invites").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", inviteId);
     }
@@ -306,10 +305,8 @@ const Interview = () => {
       : bluffScore;
     setFinalScore(score);
 
-    // Check if anonymous user
     const { data: { user } } = await supabase.auth.getUser();
     if (!user && topic) {
-      // Show leaderboard prompt for anonymous users
       setShowLeaderboardPrompt(true);
     } else {
       setVoiceStatus("idle");
