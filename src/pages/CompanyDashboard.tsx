@@ -20,6 +20,8 @@ const CompanyDashboard = () => {
   const [difficulty, setDifficulty] = useState<DifficultyLevel>(DEFAULT_DIFFICULTY);
   const [topicsInput, setTopicsInput] = useState("");
   const [creating, setCreating] = useState(false);
+  const [jdText, setJdText] = useState("");
+  const [extractingJd, setExtractingJd] = useState(false);
 
   useEffect(() => {
     if (!authLoading) {
@@ -73,6 +75,34 @@ const CompanyDashboard = () => {
       loadRoles();
     }
     setCreating(false);
+  };
+
+  const extractTopicsFromJd = async () => {
+    if (!jdText.trim()) { toast.error("Paste a job description first"); return; }
+    setExtractingJd(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("analyze-jd", {
+        body: { jdText: jdText.trim() },
+      });
+      if (error) throw error;
+      // Auto-fill job title if empty
+      if (data.title && !jobTitle.trim()) setJobTitle(data.title);
+      // Convert extracted data into topics format
+      const skills = data.extracted_data?.required_skills || [];
+      const techs = data.extracted_data?.technologies || [];
+      const responsibilities = data.extracted_data?.core_responsibilities || [];
+      // Group into topics
+      const topicLines: string[] = [];
+      if (techs.length > 0) topicLines.push(`Technologies: ${techs.join(", ")}`);
+      if (skills.length > 0) topicLines.push(`Core Skills: ${skills.join(", ")}`);
+      if (responsibilities.length > 0) topicLines.push(`Responsibilities: ${responsibilities.slice(0, 5).join(", ")}`);
+      setTopicsInput(topicLines.join("\n"));
+      toast.success("Topics extracted from JD!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to extract topics from JD");
+    }
+    setExtractingJd(false);
   };
 
   if (authLoading || loading) {
@@ -151,6 +181,26 @@ const CompanyDashboard = () => {
                       {d.emoji} {d.label}
                     </button>
                   ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-mono text-muted-foreground uppercase block mb-1.5">
+                  Paste Job Description (optional — auto-extracts topics)
+                </label>
+                <div className="flex gap-3">
+                  <textarea
+                    value={jdText}
+                    onChange={(e) => setJdText(e.target.value)}
+                    placeholder="Paste the full job description here to auto-extract topics..."
+                    className="flex-1 h-20 bg-secondary border border-border rounded-lg p-3 text-sm font-mono text-foreground placeholder:text-muted-foreground/40 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    onClick={extractTopicsFromJd}
+                    disabled={extractingJd || !jdText.trim()}
+                    className="px-4 py-2 rounded-md bg-accent text-accent-foreground text-xs font-semibold hover:bg-accent/80 disabled:opacity-50 self-end"
+                  >
+                    {extractingJd ? "Extracting..." : "Extract Topics"}
+                  </button>
                 </div>
               </div>
               <div>

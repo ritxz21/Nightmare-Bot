@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { JobRole, InterviewInvite, SessionRow } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import { toast } from "sonner";
+import { Mic, MicOff } from "lucide-react";
+import { useConversation } from "@elevenlabs/react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -36,6 +38,57 @@ const JobRoleDetail = () => {
   const [aiQuery, setAiQuery] = useState("");
   const [aiResponse, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+
+  // Voice AI query
+  const [voiceConnecting, setVoiceConnecting] = useState(false);
+  const conversation = useConversation({
+    onMessage: (message: any) => {
+      if (message.type === "agent_response") {
+        setAiResponse(message.agent_response_event?.agent_response || "");
+      }
+    },
+    onError: (error) => {
+      console.error("Voice error:", error);
+      toast.error("Voice connection error");
+    },
+  });
+
+  const startVoiceQuery = useCallback(async () => {
+    setVoiceConnecting(true);
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const { data, error } = await supabase.functions.invoke("elevenlabs-signed-url");
+      if (error || !data?.signed_url) throw new Error("Failed to get voice token");
+
+      // Build context from sessions
+      const sessionsSummary = sessions.slice(0, 20).map((s) => ({
+        bluff_score: Math.round(s.final_bluff_score),
+        concepts: (s.concept_coverage || []).map((c) => `${c.name}: ${c.status}`).join(", "),
+        status: s.status,
+      }));
+
+      await conversation.startSession({
+        signedUrl: data.signed_url,
+        overrides: {
+          agent: {
+            prompt: {
+              prompt: `You are an AI hiring intelligence assistant for the job role "${jobRole?.job_title}" at "${jobRole?.company_name}". Answer questions about candidate performance based on this data:\n${JSON.stringify(sessionsSummary)}`,
+            },
+            firstMessage: `Hi! I have data on ${sessions.length} candidate sessions for ${jobRole?.job_title}. What would you like to know?`,
+          },
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to start voice query");
+    } finally {
+      setVoiceConnecting(false);
+    }
+  }, [conversation, sessions, jobRole]);
+
+  const stopVoiceQuery = useCallback(async () => {
+    await conversation.endSession();
+  }, [conversation]);
 
   useEffect(() => {
     if (jobRoleId) loadAll();
@@ -316,7 +369,32 @@ const JobRoleDetail = () => {
                 <button onClick={askAI} disabled={aiLoading} className="px-5 py-2 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50">
                   {aiLoading ? "Thinking..." : "Ask AI"}
                 </button>
+                {conversation.status === "disconnected" ? (
+                  <button
+                    onClick={startVoiceQuery}
+                    disabled={voiceConnecting}
+                    className="px-4 py-2 rounded-md bg-accent text-accent-foreground text-sm font-semibold hover:bg-accent/80 disabled:opacity-50 flex items-center gap-2"
+                    title="Ask via voice"
+                  >
+                    <Mic className="w-4 h-4" />
+                    {voiceConnecting ? "..." : "Voice"}
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopVoiceQuery}
+                    className="px-4 py-2 rounded-md bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 flex items-center gap-2 animate-pulse"
+                    title="Stop voice query"
+                  >
+                    <MicOff className="w-4 h-4" />
+                    Stop
+                  </button>
+                )}
               </div>
+              {conversation.status === "connected" && (
+                <p className="text-xs font-mono text-primary animate-pulse">
+                  🎙️ Voice active — {conversation.isSpeaking ? "AI is speaking..." : "Listening..."}
+                </p>
+              )}
               {aiResponse && (
                 <div className="bg-secondary/50 rounded-lg p-4 text-sm text-foreground whitespace-pre-wrap font-mono">
                   {aiResponse}
