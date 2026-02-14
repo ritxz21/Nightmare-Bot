@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { KnowledgeMap } from "@/components/KnowledgeMap";
 import { SessionRow } from "@/lib/types";
+import { exportResultsPdf } from "@/lib/exportPdf";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -205,6 +206,9 @@ const Results = () => {
           <div className="flex items-center justify-center gap-4 pb-8">
             <button onClick={() => navigate("/")} className="px-6 py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
               Try Another Topic
+            </button>
+            <button onClick={() => exportResultsPdf(session)} className="px-6 py-2.5 rounded-md border border-primary/50 text-sm font-mono text-primary hover:bg-primary/10 transition-colors">
+              Export PDF
             </button>
             <button onClick={() => navigate("/history")} className="px-6 py-2.5 rounded-md border border-border text-sm font-mono text-muted-foreground hover:text-foreground transition-colors">
               View History
