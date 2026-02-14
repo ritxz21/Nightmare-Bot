@@ -14,6 +14,7 @@ import JdPrep from "./pages/JdPrep";
 import Invites from "./pages/Invites";
 import CompanyDashboard from "./pages/CompanyDashboard";
 import JobRoleDetail from "./pages/JobRoleDetail";
+import Leaderboard from "./pages/Leaderboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
           <Route path="/invites" element={<Invites />} />
           <Route path="/company" element={<CompanyDashboard />} />
           <Route path="/company/:jobRoleId" element={<JobRoleDetail />} />
+          <Route path="/leaderboard" element={<Leaderboard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

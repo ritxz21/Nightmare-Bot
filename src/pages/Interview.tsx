@@ -8,6 +8,7 @@ import { BluffMeter } from "@/components/BluffMeter";
 import { KnowledgeMap, ConceptNode } from "@/components/KnowledgeMap";
 import { supabase } from "@/integrations/supabase/client";
 import { DifficultyLevel, DEFAULT_DIFFICULTY, DIFFICULTIES } from "@/lib/difficulty";
+import { LeaderboardPrompt } from "@/components/LeaderboardPrompt";
 
 interface AnalysisResult {
   concepts_mentioned_clearly: string[];
@@ -49,6 +50,8 @@ const Interview = () => {
   const [error, setError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [showLeaderboardPrompt, setShowLeaderboardPrompt] = useState(false);
+  const [finalScore, setFinalScore] = useState(0);
 
   const transcriptRef = useRef<TranscriptEntry[]>([]);
   const lastAnalysisRef = useRef<AnalysisResult | null>(null);
@@ -226,12 +229,46 @@ const Interview = () => {
       await supabase.from("interview_invites").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", inviteId);
     }
     await persistSession({ status: "completed" });
-    const sid = sessionIdRef.current;
-    sessionIdRef.current = null;
+    
+    const score = bluffHistoryRef.current.length > 0
+      ? bluffHistoryRef.current[bluffHistoryRef.current.length - 1].score
+      : bluffScore;
+    setFinalScore(score);
+
+    // Check if anonymous user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user && topic) {
+      // Show leaderboard prompt for anonymous users
+      setShowLeaderboardPrompt(true);
+    } else {
+      const sid = sessionIdRef.current;
+      sessionIdRef.current = null;
+      setVoiceStatus("idle");
+      if (sid) navigate(`/results/${sid}`);
+      else navigate("/");
+    }
+  }, [conversation, persistSession, navigate, inviteId, bluffScore, topic]);
+
+  const handleLeaderboardSubmit = async (name: string) => {
+    if (!topic) return;
+    await supabase.from("leaderboard_entries").insert({
+      player_name: name,
+      topic_id: topic.id,
+      topic_title: topic.title,
+      avg_bluff_score: finalScore,
+      best_bluff_score: finalScore,
+      sessions_count: 1,
+    });
+    setShowLeaderboardPrompt(false);
     setVoiceStatus("idle");
-    if (sid) navigate(`/results/${sid}`);
-    else navigate("/");
-  }, [conversation, persistSession, navigate, inviteId]);
+    navigate("/leaderboard");
+  };
+
+  const handleLeaderboardSkip = () => {
+    setShowLeaderboardPrompt(false);
+    setVoiceStatus("idle");
+    navigate("/");
+  };
 
   if (!topic) {
     return (
@@ -300,6 +337,17 @@ const Interview = () => {
           </div>
         </aside>
       </div>
+
+      {topic && (
+        <LeaderboardPrompt
+          open={showLeaderboardPrompt}
+          topicId={topic.id}
+          topicTitle={topic.title}
+          bluffScore={finalScore}
+          onSubmit={handleLeaderboardSubmit}
+          onSkip={handleLeaderboardSkip}
+        />
+      )}
     </div>
   );
 };
