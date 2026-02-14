@@ -4,6 +4,7 @@ import { TOPICS } from "@/lib/topics";
 import { TopicCard } from "@/components/TopicCard";
 import { DifficultyPicker } from "@/components/DifficultyPicker";
 import { DifficultyLevel, DEFAULT_DIFFICULTY } from "@/lib/difficulty";
+import Navbar from "@/components/Navbar";
 
 const Index = () => {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
@@ -17,31 +18,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="border-b border-border/50 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-primary animate-pulse-glow" />
-            <span className="text-sm font-mono text-muted-foreground tracking-wider uppercase">
-              DeepFake Interviewer
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <button onClick={() => navigate("/resume")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
-              Resume
-            </button>
-            <button onClick={() => navigate("/dashboard")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
-              Interviewer
-            </button>
-            <button onClick={() => navigate("/history")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
-              History
-            </button>
-            <button onClick={() => navigate("/auth")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
-              Sign In
-            </button>
-          </div>
-        </div>
-      </header>
+      <Navbar />
 
       {/* Hero */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 py-16">
