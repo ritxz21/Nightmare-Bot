@@ -24,6 +24,9 @@ const Index = () => {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            <button onClick={() => navigate("/dashboard")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
+              Interviewer
+            </button>
             <button onClick={() => navigate("/history")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
               History
             </button>

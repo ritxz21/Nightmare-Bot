@@ -7,6 +7,8 @@ import Index from "./pages/Index";
 import Interview from "./pages/Interview";
 import Auth from "./pages/Auth";
 import History from "./pages/History";
+import Results from "./pages/Results";
+import InterviewerDashboard from "./pages/InterviewerDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +24,8 @@ const App = () => (
           <Route path="/interview/:topicId" element={<Interview />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/history" element={<History />} />
+          <Route path="/results/:sessionId" element={<Results />} />
+          <Route path="/dashboard" element={<InterviewerDashboard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
