@@ -2,14 +2,24 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { KnowledgeMap } from "@/components/KnowledgeMap";
-import { SessionRow } from "@/lib/types";
+import { SessionRow, JobRole } from "@/lib/types";
 import Navbar from "@/components/Navbar";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
 
 const History = () => {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [jobRolesMap, setJobRolesMap] = useState<Record<string, JobRole>>({});
   const [user, setUser] = useState<boolean>(false);
 
   useEffect(() => {
@@ -17,11 +27,16 @@ const History = () => {
       const { data: { user: u } } = await supabase.auth.getUser();
       if (!u) { setLoading(false); return; }
       setUser(true);
-      const { data, error } = await supabase
-        .from("interview_sessions")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error && data) setSessions(data as unknown as SessionRow[]);
+      const [sessRes, rolesRes] = await Promise.all([
+        supabase.from("interview_sessions").select("*").order("created_at", { ascending: false }),
+        supabase.from("job_roles").select("*"),
+      ]);
+      if (!sessRes.error && sessRes.data) setSessions(sessRes.data as unknown as SessionRow[]);
+      if (!rolesRes.error && rolesRes.data) {
+        const map: Record<string, JobRole> = {};
+        (rolesRes.data as unknown as JobRole[]).forEach((r) => { map[r.id] = r; });
+        setJobRolesMap(map);
+      }
       setLoading(false);
     };
     load();
@@ -83,6 +98,11 @@ const History = () => {
                         <span className="text-lg">{session.topic_id === "neural-networks" ? "🧠" : session.topic_id === "databases" ? "🗄️" : "⚙️"}</span>
                         <div>
                           <p className="text-sm font-semibold text-foreground">{session.topic_title}</p>
+                          {session.job_role_id && jobRolesMap[session.job_role_id] && (
+                            <p className="text-[10px] font-mono text-primary">
+                              {jobRolesMap[session.job_role_id].job_title} — {jobRolesMap[session.job_role_id].company_name}
+                            </p>
+                          )}
                           <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{formatDate(session.created_at)}</p>
                         </div>
                       </div>
@@ -137,22 +157,20 @@ const History = () => {
                         </div>
 
                         {/* Bluff History */}
-                        {(session.bluff_history || []).length > 0 && (
+                        {(session.bluff_history || []).length > 1 && (
                           <div className="mt-6">
                             <h4 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-3">Bluff Score Over Time</h4>
-                            <div className="flex items-end gap-1 h-16">
-                              {session.bluff_history.map((point, i) => (
-                                <div
-                                  key={i}
-                                  className="flex-1 rounded-t-sm transition-all"
-                                  style={{
-                                    height: `${Math.max(point.score, 4)}%`,
-                                    backgroundColor: point.score < 30 ? "hsl(var(--concept-green))" : point.score < 60 ? "hsl(var(--concept-yellow))" : "hsl(var(--primary))",
-                                  }}
-                                  title={`${Math.round(point.score)}%`}
+                            <ResponsiveContainer width="100%" height={120}>
+                              <LineChart data={session.bluff_history.map((p, i) => ({ index: i + 1, score: Math.round(p.score), label: `Q${i + 1}` }))}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 16%)" />
+                                <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(240, 5%, 55%)", fontFamily: "JetBrains Mono" }} />
+                                <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: "hsl(240, 5%, 55%)", fontFamily: "JetBrains Mono" }} />
+                                <Tooltip
+                                  contentStyle={{ background: "hsl(240, 12%, 8%)", border: "1px solid hsl(240, 10%, 16%)", borderRadius: "8px", fontFamily: "JetBrains Mono", fontSize: "11px" }}
                                 />
-                              ))}
-                            </div>
+                                <Line type="monotone" dataKey="score" stroke="hsl(0, 72%, 51%)" strokeWidth={2} dot={{ r: 3, fill: "hsl(0, 72%, 51%)" }} />
+                              </LineChart>
+                            </ResponsiveContainer>
                           </div>
                         )}
                       </div>
