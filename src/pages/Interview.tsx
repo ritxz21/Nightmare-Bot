@@ -170,7 +170,8 @@ const Interview = () => {
   // Stable callbacks via refs to prevent useConversation from re-initializing
   const conversation = useConversation({
     onConnect: () => { setVoiceStatus("listening"); setError(null); },
-    onDisconnect: () => {
+    onDisconnect: (details) => {
+      console.log("ElevenLabs disconnected:", details);
       setVoiceStatus("idle");
       // Only mark as disconnected if it wasn't an intentional end
       if (sessionIdRef.current && !intentionalEndRef.current) {
