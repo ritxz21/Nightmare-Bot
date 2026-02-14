@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { DifficultyPicker } from "@/components/DifficultyPicker";
 import { DifficultyLevel, DEFAULT_DIFFICULTY } from "@/lib/difficulty";
 import { toast } from "sonner";
+import Navbar from "@/components/Navbar";
 
 interface ResumeProject {
   name: string;
@@ -140,19 +141,7 @@ const ResumeInterview = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="border-b border-border/50 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-primary animate-pulse-glow" />
-            <span className="text-sm font-mono text-muted-foreground tracking-wider uppercase">
-              Resume Interview
-            </span>
-          </div>
-          <button onClick={() => navigate("/")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
-            ← Back
-          </button>
-        </div>
-      </header>
+      <Navbar />
 
       <main className="flex-1 flex flex-col items-center px-6 py-12">
         {!resumeData ? (

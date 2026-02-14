@@ -2,13 +2,10 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
-type Role = "interviewer" | "interviewee";
-
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<Role>("interviewee");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -23,16 +20,7 @@ const Auth = () => {
       if (signInError) {
         setError(signInError.message);
       } else {
-        // Check user role and navigate accordingly
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: roles } = await supabase
-            .from("user_roles" as any)
-            .select("role")
-            .eq("user_id", user.id);
-          const userRole = (roles as any)?.[0]?.role;
-          navigate(userRole === "interviewer" ? "/dashboard" : "/");
-        }
+        navigate("/dashboard");
       }
     } else {
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -43,12 +31,7 @@ const Auth = () => {
       if (signUpError) {
         setError(signUpError.message);
       } else if (data.user) {
-        // Insert role
-        const { error: roleError } = await supabase
-          .from("user_roles" as any)
-          .insert({ user_id: data.user.id, role });
-        if (roleError) console.error("Role insert error:", roleError);
-        navigate(role === "interviewer" ? "/dashboard" : "/");
+        navigate("/dashboard");
       }
     }
     setLoading(false);
@@ -73,43 +56,6 @@ const Auth = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Role picker — signup only */}
-          {!isLogin && (
-            <div>
-              <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider block mb-2">
-                I am an
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setRole("interviewee")}
-                  className={`p-3 rounded-lg border text-left transition-all duration-300 ${
-                    role === "interviewee"
-                      ? "border-primary bg-primary/10 card-glow-hover"
-                      : "border-border bg-card hover:border-primary/40"
-                  }`}
-                >
-                  <div className="text-xl mb-1">🎯</div>
-                  <div className="text-sm font-semibold text-foreground">Interviewee</div>
-                  <div className="text-[10px] text-muted-foreground">Practice & get grilled</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRole("interviewer")}
-                  className={`p-3 rounded-lg border text-left transition-all duration-300 ${
-                    role === "interviewer"
-                      ? "border-primary bg-primary/10 card-glow-hover"
-                      : "border-border bg-card hover:border-primary/40"
-                  }`}
-                >
-                  <div className="text-xl mb-1">🔍</div>
-                  <div className="text-sm font-semibold text-foreground">Interviewer</div>
-                  <div className="text-[10px] text-muted-foreground">Review candidates</div>
-                </button>
-              </div>
-            </div>
-          )}
-
           <div>
             <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider block mb-1.5">
               Email

@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { SessionRow } from "@/lib/types";
+import Navbar from "@/components/Navbar";
 import {
   ResponsiveContainer,
   LineChart,
   Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -17,7 +20,6 @@ const InterviewerDashboard = () => {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
   const [user, setUser] = useState(false);
 
   useEffect(() => {
@@ -30,25 +32,44 @@ const InterviewerDashboard = () => {
         .select("*")
         .order("created_at", { ascending: false });
       if (!error && data) {
-        const rows = data as unknown as SessionRow[];
-        setSessions(rows);
-        if (rows.length > 0) setSelectedSession(rows[0]);
+        setSessions(data as unknown as SessionRow[]);
       }
       setLoading(false);
     };
     load();
   }, []);
 
+  // Real-time subscription for live updates
+  useEffect(() => {
+    const channel = supabase
+      .channel("live-sessions")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "interview_sessions" },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            setSessions((prev) => [payload.new as unknown as SessionRow, ...prev]);
+          } else if (payload.eventType === "UPDATE") {
+            setSessions((prev) =>
+              prev.map((s) => (s.id === (payload.new as any).id ? (payload.new as unknown as SessionRow) : s))
+            );
+          } else if (payload.eventType === "DELETE") {
+            setSessions((prev) => prev.filter((s) => s.id !== (payload.old as any).id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const activeSessions = sessions.filter((s) => s.status === "in_progress");
+  const completedSessions = sessions.filter((s) => s.status === "completed");
+
   const getScoreColor = (score: number) => {
     if (score < 30) return "text-concept-green";
     if (score < 60) return "text-concept-yellow";
     return "text-primary";
-  };
-
-  const getScoreBg = (score: number) => {
-    if (score < 30) return "bg-concept-green/10 border-concept-green/20";
-    if (score < 60) return "bg-concept-yellow/10 border-concept-yellow/20";
-    return "bg-primary/10 border-primary/20";
   };
 
   const formatDate = (iso: string) => {
@@ -57,12 +78,27 @@ const InterviewerDashboard = () => {
       " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   };
 
-  const getBluffSpikes = (history: SessionRow["bluff_history"]) => {
-    if (!history || history.length < 2) return [];
-    return history
-      .map((point, i) => ({ ...point, index: i, delta: i > 0 ? point.score - history[i - 1].score : 0 }))
-      .filter((p) => p.score > 60 || p.delta > 15);
-  };
+  // Performance metrics
+  const avgBluff = completedSessions.length > 0
+    ? Math.round(completedSessions.reduce((sum, s) => sum + s.final_bluff_score, 0) / completedSessions.length)
+    : 0;
+
+  const trendData = completedSessions.slice(0, 10).reverse().map((s, i) => ({
+    index: i + 1,
+    score: Math.round(s.final_bluff_score),
+    label: s.topic_title.slice(0, 12),
+  }));
+
+  // Find most problematic concept
+  const conceptCounts: Record<string, number> = {};
+  completedSessions.forEach((s) => {
+    (s.concept_coverage || []).forEach((c) => {
+      if (c.status === "missing" || c.status === "shallow") {
+        conceptCounts[c.name] = (conceptCounts[c.name] || 0) + 1;
+      }
+    });
+  });
+  const worstConcept = Object.entries(conceptCounts).sort((a, b) => b[1] - a[1])[0];
 
   if (loading) {
     return (
@@ -74,247 +110,172 @@ const InterviewerDashboard = () => {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <p className="text-muted-foreground font-mono text-sm">Sign in to access the interviewer dashboard.</p>
-        <button onClick={() => navigate("/auth")} className="px-6 py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">Sign In</button>
+      <div className="min-h-screen bg-background flex flex-col">
+        <Navbar />
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <p className="text-muted-foreground font-mono text-sm">Sign in to access the dashboard.</p>
+          <button onClick={() => navigate("/auth")} className="px-6 py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">Sign In</button>
+        </div>
       </div>
     );
   }
 
-  const spikeData = selectedSession ? getBluffSpikes(selectedSession.bluff_history) : [];
-  const chartData = (selectedSession?.bluff_history || []).map((point, i) => ({
-    index: i + 1,
-    score: Math.round(point.score),
-    label: `Q${i + 1}`,
-    isSpike: spikeData.some((s) => s.index === i),
-  }));
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="border-b border-border/50 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/")} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-mono">←</button>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse-glow" />
-              <span className="text-sm font-mono text-muted-foreground tracking-wider uppercase">Interviewer Dashboard</span>
+      <Navbar />
+
+      <main className="flex-1 px-6 py-8 overflow-y-auto">
+        <div className="max-w-6xl mx-auto space-y-8">
+
+          {/* Section A: Live Interviews */}
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-widest">Live Interviews</h2>
+              {activeSessions.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-primary/20 text-primary border border-primary/30 animate-pulse">
+                  LIVE · {activeSessions.length}
+                </span>
+              )}
             </div>
-          </div>
-          <span className="text-xs font-mono text-muted-foreground">{sessions.length} session{sessions.length !== 1 ? "s" : ""}</span>
-        </div>
-      </header>
-
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left: Candidate List */}
-        <aside className="w-80 border-r border-border/50 overflow-y-auto bg-card/30">
-          <div className="p-4">
-            <h3 className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-3">Candidates</h3>
-          </div>
-          {sessions.length === 0 && (
-            <p className="text-xs text-muted-foreground/50 italic text-center px-4">No sessions yet.</p>
-          )}
-          {sessions.map((s) => {
-            const concepts = s.concept_coverage || [];
-            const clear = concepts.filter((c) => c.status === "clear").length;
-            const isSelected = selectedSession?.id === s.id;
-
-            return (
-              <button
-                key={s.id}
-                onClick={() => setSelectedSession(s)}
-                className={`w-full px-4 py-3 text-left border-b border-border/20 transition-colors ${
-                  isSelected ? "bg-secondary/50 border-l-2 border-l-primary" : "hover:bg-secondary/20"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-semibold text-foreground">{s.topic_title}</span>
-                  <span className={`text-sm font-bold font-mono ${getScoreColor(s.final_bluff_score)}`}>
-                    {Math.round(s.final_bluff_score)}%
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono text-muted-foreground">{formatDate(s.created_at)}</span>
-                  <span className="text-[10px] font-mono text-muted-foreground">{clear}/{concepts.length} clear</span>
-                </div>
-              </button>
-            );
-          })}
-        </aside>
-
-        {/* Right: Detail Panel */}
-        <main className="flex-1 overflow-y-auto p-6">
-          {!selectedSession ? (
-            <p className="text-center text-muted-foreground font-mono text-sm mt-16">Select a session to review.</p>
-          ) : (
-            <div className="max-w-4xl mx-auto space-y-8">
-              {/* Summary Header */}
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-foreground">{selectedSession.topic_title}</h2>
-                  <p className="text-xs font-mono text-muted-foreground mt-1">{formatDate(selectedSession.created_at)}</p>
-                </div>
-                <div className={`px-4 py-3 rounded-lg border ${getScoreBg(selectedSession.final_bluff_score)} text-center`}>
-                  <p className="text-[9px] font-mono text-muted-foreground uppercase">Bluff Score</p>
-                  <p className={`text-3xl font-bold font-mono ${getScoreColor(selectedSession.final_bluff_score)}`}>
-                    {Math.round(selectedSession.final_bluff_score)}%
-                  </p>
-                </div>
+            {activeSessions.length === 0 ? (
+              <div className="bg-card border border-border/50 rounded-lg p-8 text-center">
+                <p className="text-sm text-muted-foreground font-mono">No active interviews right now.</p>
+                <button onClick={() => navigate("/")} className="mt-3 text-xs font-mono text-primary hover:underline underline-offset-4">
+                  Start a new interview →
+                </button>
               </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {activeSessions.map((s) => {
+                  const chartData = (s.bluff_history || []).map((p, i) => ({ index: i + 1, score: Math.round(p.score) }));
+                  const concepts = s.concept_coverage || [];
+                  const clearPct = concepts.length > 0
+                    ? Math.round((concepts.filter((c) => c.status === "clear").length / concepts.length) * 100)
+                    : 0;
+                  const elapsed = Math.round((Date.now() - new Date(s.created_at).getTime()) / 60000);
 
-              {/* Concept Summary Pills */}
-              <div>
-                <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-3">Concept Coverage</h3>
-                <div className="flex flex-wrap gap-2">
-                  {(selectedSession.concept_coverage || []).map((c) => (
-                    <span
-                      key={c.name}
-                      className={`px-2.5 py-1 rounded-md text-xs font-mono border ${
-                        c.status === "clear"
-                          ? "bg-concept-green/15 border-concept-green/30 text-concept-green"
-                          : c.status === "shallow"
-                          ? "bg-concept-yellow/15 border-concept-yellow/30 text-concept-yellow"
-                          : "bg-secondary border-border text-muted-foreground/50"
-                      }`}
+                  return (
+                    <div key={s.id} className="bg-card border border-primary/20 rounded-lg p-5 card-glow">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-foreground">{s.topic_title}</h3>
+                          <p className="text-[10px] font-mono text-muted-foreground">{elapsed}m elapsed</p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-2xl font-bold font-mono ${getScoreColor(s.final_bluff_score)}`}>
+                            {Math.round(s.final_bluff_score)}%
+                          </p>
+                          <p className="text-[9px] font-mono text-muted-foreground uppercase">bluff</p>
+                        </div>
+                      </div>
+                      {chartData.length > 1 && (
+                        <ResponsiveContainer width="100%" height={80}>
+                          <LineChart data={chartData}>
+                            <Line type="monotone" dataKey="score" stroke="hsl(0, 72%, 51%)" strokeWidth={2} dot={false} />
+                            <ReferenceLine y={60} stroke="hsl(0, 72%, 51%)" strokeDasharray="3 3" strokeOpacity={0.4} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      )}
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-full max-w-[120px] h-1.5 bg-secondary rounded-full overflow-hidden">
+                            <div className="h-full bg-concept-green rounded-full transition-all" style={{ width: `${clearPct}%` }} />
+                          </div>
+                          <span className="text-[10px] font-mono text-muted-foreground">{clearPct}% mastery</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Section B: Completed Interviews */}
+          <section>
+            <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">
+              Completed Interviews ({completedSessions.length})
+            </h2>
+            {completedSessions.length === 0 ? (
+              <p className="text-xs text-muted-foreground/50 italic">No completed sessions yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {completedSessions.map((s) => {
+                  const concepts = s.concept_coverage || [];
+                  const clear = concepts.filter((c) => c.status === "clear").length;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => navigate(`/results/${s.id}`)}
+                      className="w-full px-5 py-4 bg-card border border-border/50 rounded-lg flex items-center justify-between hover:bg-secondary/30 transition-colors text-left"
                     >
-                      {c.name}
-                    </span>
-                  ))}
+                      <div className="flex items-center gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{s.topic_title}</p>
+                          <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{formatDate(s.created_at)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <p className={`text-lg font-bold font-mono ${getScoreColor(s.final_bluff_score)}`}>
+                            {Math.round(s.final_bluff_score)}%
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-mono text-muted-foreground">{clear}/{concepts.length} clear</span>
+                        <span className="text-muted-foreground text-xs">→</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Section C: Performance Overview */}
+          {completedSessions.length > 0 && (
+            <section>
+              <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">Performance Overview</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-card border border-border/50 rounded-lg p-5 text-center">
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Avg Bluff Score</p>
+                  <p className={`text-3xl font-bold font-mono ${getScoreColor(avgBluff)}`}>{avgBluff}%</p>
+                </div>
+                <div className="bg-card border border-border/50 rounded-lg p-5 text-center">
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Total Sessions</p>
+                  <p className="text-3xl font-bold font-mono text-foreground">{completedSessions.length}</p>
+                </div>
+                <div className="bg-card border border-border/50 rounded-lg p-5 text-center">
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Weakest Concept</p>
+                  <p className="text-sm font-bold font-mono text-primary truncate">{worstConcept?.[0] || "N/A"}</p>
+                  {worstConcept && <p className="text-[10px] text-muted-foreground mt-1">flagged {worstConcept[1]}×</p>}
                 </div>
               </div>
-
-              {/* Bluff Timeline with Spikes */}
-              <div className="bg-card border border-border/50 rounded-lg p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-widest">Bluff Score Timeline</h3>
-                  {spikeData.length > 0 && (
-                    <span className="text-[10px] font-mono text-primary">
-                      ⚠ {spikeData.length} spike{spikeData.length !== 1 ? "s" : ""} detected
-                    </span>
-                  )}
-                </div>
-                {chartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={chartData}>
+              {trendData.length > 1 && (
+                <div className="bg-card border border-border/50 rounded-lg p-5">
+                  <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">Last 10 Sessions Trend</h3>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <AreaChart data={trendData}>
+                      <defs>
+                        <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 16%)" />
-                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: "hsl(240, 5%, 55%)", fontFamily: "JetBrains Mono" }} />
+                      <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(240, 5%, 55%)", fontFamily: "JetBrains Mono" }} />
                       <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(240, 5%, 55%)", fontFamily: "JetBrains Mono" }} />
                       <Tooltip
                         contentStyle={{ background: "hsl(240, 12%, 8%)", border: "1px solid hsl(240, 10%, 16%)", borderRadius: "8px", fontFamily: "JetBrains Mono", fontSize: "12px" }}
-                        labelStyle={{ color: "hsl(240, 5%, 55%)" }}
                       />
-                      <ReferenceLine y={60} stroke="hsl(0, 72%, 51%)" strokeDasharray="5 5" label={{ value: "Bluff threshold", position: "insideTopRight", fill: "hsl(0, 72%, 51%)", fontSize: 10, fontFamily: "JetBrains Mono" }} />
-                      <Line
-                        type="monotone"
-                        dataKey="score"
-                        stroke="hsl(0, 72%, 51%)"
-                        strokeWidth={2}
-                        dot={(props: any) => {
-                          const { cx, cy, payload } = props;
-                          if (payload.isSpike) {
-                            return (
-                              <g key={`spike-${payload.index}`}>
-                                <circle cx={cx} cy={cy} r={6} fill="hsl(0, 72%, 51%)" fillOpacity={0.3} />
-                                <circle cx={cx} cy={cy} r={4} fill="hsl(0, 72%, 51%)" />
-                              </g>
-                            );
-                          }
-                          return <circle key={`dot-${payload.index}`} cx={cx} cy={cy} r={3} fill="hsl(240, 10%, 14%)" stroke="hsl(0, 72%, 51%)" strokeWidth={2} />;
-                        }}
-                      />
-                    </LineChart>
+                      <Area type="monotone" dataKey="score" stroke="hsl(0, 72%, 51%)" fill="url(#trendGrad)" strokeWidth={2} dot={{ r: 3, fill: "hsl(0, 72%, 51%)" }} />
+                    </AreaChart>
                   </ResponsiveContainer>
-                ) : (
-                  <p className="text-xs text-muted-foreground/50 italic text-center py-8">No bluff data recorded.</p>
-                )}
-              </div>
-
-              {/* Spike Details */}
-              {spikeData.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-3">Bluff Spike Details</h3>
-                  <div className="space-y-2">
-                    {spikeData.map((spike, i) => {
-                      const transcript = selectedSession.transcript || [];
-                      // Find the user message closest to this spike
-                      const userMessages = transcript.filter((t) => t.role === "user");
-                      const relevantMsg = userMessages[spike.index] || userMessages[userMessages.length - 1];
-
-                      return (
-                        <div key={i} className="bg-primary/5 border border-primary/15 rounded-lg px-4 py-3 flex items-start gap-3">
-                          <div className="flex-shrink-0 w-10 text-center">
-                            <p className="text-lg font-bold font-mono text-primary">{Math.round(spike.score)}%</p>
-                            <p className="text-[9px] font-mono text-muted-foreground">Q{spike.index + 1}</p>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-muted-foreground font-mono mb-1">
-                              {spike.delta > 15 ? `↑${Math.round(spike.delta)}% spike` : "Above threshold"}
-                            </p>
-                            {relevantMsg && (
-                              <p className="text-sm text-foreground/80 leading-relaxed truncate">
-                                "{relevantMsg.text}"
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
               )}
-
-              {/* Full Transcript */}
-              <div className="bg-card border border-border/50 rounded-lg p-5">
-                <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">Full Transcript</h3>
-                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                  {(selectedSession.transcript || []).length === 0 && (
-                    <p className="text-xs text-muted-foreground/50 italic text-center">No transcript recorded.</p>
-                  )}
-                  {(selectedSession.transcript || []).map((entry, i) => {
-                    // Check if this user message coincides with a bluff spike
-                    const isBluffMoment = entry.role === "user" && spikeData.some((s) => {
-                      const userMessages = (selectedSession.transcript || []).filter((t) => t.role === "user");
-                      const msgIndex = userMessages.indexOf(entry);
-                      return msgIndex === s.index;
-                    });
-
-                    return (
-                      <div key={i} className={`flex flex-col gap-0.5 ${entry.role === "agent" ? "items-start" : "items-end"}`}>
-                        <span className="text-[9px] font-mono text-muted-foreground/40 uppercase">
-                          {entry.role === "agent" ? "Interviewer" : "Candidate"}
-                        </span>
-                        <div className={`max-w-[75%] px-3 py-2 rounded-lg text-sm leading-relaxed relative ${
-                          entry.role === "agent"
-                            ? "bg-secondary text-secondary-foreground"
-                            : isBluffMoment
-                            ? "bg-primary/15 text-foreground border border-primary/30"
-                            : "bg-primary/5 text-foreground border border-primary/10"
-                        }`}>
-                          {isBluffMoment && (
-                            <span className="absolute -top-2 -right-2 text-[9px] font-mono bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">
-                              BLUFF
-                            </span>
-                          )}
-                          {entry.text}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Link to full results */}
-              <div className="text-center pb-8">
-                <button
-                  onClick={() => navigate(`/results/${selectedSession.id}`)}
-                  className="text-xs font-mono text-primary hover:underline underline-offset-4"
-                >
-                  View full results page →
-                </button>
-              </div>
-            </div>
+            </section>
           )}
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 };

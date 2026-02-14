@@ -56,6 +56,33 @@ export type Database = {
         }
         Relationships: []
       }
+      resume_topics: {
+        Row: {
+          created_at: string
+          extracted_data: Json
+          generated_topics: Json
+          id: string
+          resume_hash: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          extracted_data?: Json
+          generated_topics?: Json
+          id?: string
+          resume_hash: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          extracted_data?: Json
+          generated_topics?: Json
+          id?: string
+          resume_hash?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string

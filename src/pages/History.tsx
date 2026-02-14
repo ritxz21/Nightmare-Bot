@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { KnowledgeMap } from "@/components/KnowledgeMap";
 import { SessionRow } from "@/lib/types";
+import Navbar from "@/components/Navbar";
 
 const History = () => {
   const navigate = useNavigate();
@@ -40,17 +41,7 @@ const History = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="border-b border-border/50 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/")} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-mono">←</button>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse-glow" />
-              <span className="text-sm font-mono text-muted-foreground tracking-wider uppercase">Session History</span>
-            </div>
-          </div>
-        </div>
-      </header>
+      <Navbar />
 
       <main className="flex-1 px-6 py-8">
         <div className="max-w-4xl mx-auto">
