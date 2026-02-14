@@ -7,18 +7,60 @@ import Navbar from "@/components/Navbar";
 import { DifficultyPicker } from "@/components/DifficultyPicker";
 import { DifficultyLevel, DEFAULT_DIFFICULTY } from "@/lib/difficulty";
 import type { JobDescription } from "@/lib/types";
+import { Upload, FileText, ClipboardPaste } from "lucide-react";
 
 const JdPrep = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [mode, setMode] = useState<"upload" | "paste">("paste");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [jdText, setJdText] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [jdData, setJdData] = useState<JobDescription | null>(null);
   const [resumeText, setResumeText] = useState("");
+  const [resumeMode, setResumeMode] = useState<"upload" | "paste">("upload");
+  const [resumeFileName, setResumeFileName] = useState("");
   const [step, setStep] = useState<"jd" | "resume" | "results">("jd");
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<DifficultyLevel>(DEFAULT_DIFFICULTY);
+  const [isExtractingResume, setIsExtractingResume] = useState(false);
+
+  const handleResumeFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+    const validExtensions = [".pdf", ".doc", ".docx"];
+    const hasValidExt = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+
+    if (!validTypes.includes(file.type) && !hasValidExt) {
+      toast.error("Please upload a PDF or Word document");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("File must be under 10MB");
+      return;
+    }
+
+    setIsExtractingResume(true);
+    setResumeFileName(file.name);
+    try {
+      // Upload to storage if authenticated
+      if (user) {
+        const filePath = `${user.id}/${Date.now()}-${file.name}`;
+        await supabase.storage.from("resumes").upload(filePath, file);
+      }
+
+      // Extract text from the file
+      const text = await file.text();
+      setResumeText(text);
+      toast.success(`${file.name} uploaded successfully!`);
+    } catch (err) {
+      console.error("File upload error:", err);
+      toast.error("Failed to process file");
+    } finally {
+      setIsExtractingResume(false);
+    }
+  };
 
   const analyzeJd = async () => {
     if (!jdText.trim()) { toast.error("Please enter a job description"); return; }
@@ -31,7 +73,6 @@ const JdPrep = () => {
       });
       if (error) throw error;
 
-      // Save to DB
       const { data: saved } = await supabase.from("job_descriptions").insert({
         user_id: user.id,
         title: data.title || "Untitled Role",
@@ -109,14 +150,74 @@ const JdPrep = () => {
           <div className="max-w-2xl w-full space-y-8">
             <div className="text-center">
               <h2 className="text-3xl font-bold text-foreground mb-4">Add Your Resume</h2>
-              <p className="text-muted-foreground text-sm">Optional — paste your resume for gap analysis against the JD.</p>
+              <p className="text-muted-foreground text-sm">Optional — add your resume for gap analysis against the JD.</p>
             </div>
-            <textarea
-              value={resumeText}
-              onChange={(e) => setResumeText(e.target.value)}
-              placeholder="Paste your resume content here (optional)..."
-              className="w-full h-48 bg-card border border-border rounded-lg p-4 text-sm font-mono text-foreground placeholder:text-muted-foreground/40 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
-            />
+
+            {/* Mode toggle */}
+            <div className="flex items-center justify-center gap-2">
+              <button
+                onClick={() => setResumeMode("upload")}
+                className={`px-4 py-2 rounded-lg text-sm font-mono transition-all flex items-center gap-2 ${
+                  resumeMode === "upload" ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" /> Upload File
+              </button>
+              <button
+                onClick={() => setResumeMode("paste")}
+                className={`px-4 py-2 rounded-lg text-sm font-mono transition-all flex items-center gap-2 ${
+                  resumeMode === "paste" ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <ClipboardPaste className="w-3.5 h-3.5" /> Paste Text
+              </button>
+            </div>
+
+            {resumeMode === "upload" ? (
+              <div className="space-y-4">
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-border hover:border-primary/40 rounded-lg p-10 text-center cursor-pointer transition-all hover:bg-card/50"
+                >
+                  {resumeFileName ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <FileText className="w-10 h-10 text-primary" />
+                      <p className="text-sm font-mono text-foreground">{resumeFileName}</p>
+                      <p className="text-xs text-muted-foreground">Click to replace</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                      <p className="text-sm text-muted-foreground mb-1">Click to upload your resume</p>
+                      <p className="text-xs text-muted-foreground/60">PDF or Word (.doc, .docx) • Max 10MB</p>
+                    </>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={handleResumeFileUpload}
+                    className="hidden"
+                  />
+                </div>
+                {isExtractingResume && (
+                  <div className="text-center">
+                    <div className="inline-flex items-center gap-2 text-sm text-muted-foreground font-mono">
+                      <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                      Processing file...
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <textarea
+                value={resumeText}
+                onChange={(e) => setResumeText(e.target.value)}
+                placeholder="Paste your resume content here (optional)..."
+                className="w-full h-48 bg-card border border-border rounded-lg p-4 text-sm font-mono text-foreground placeholder:text-muted-foreground/40 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            )}
+
             <div className="flex gap-3">
               <button onClick={() => setStep("jd")} className="px-6 py-3 rounded-lg text-sm font-mono border border-border text-muted-foreground hover:text-foreground transition-colors">
                 ← Back
@@ -138,7 +239,6 @@ const JdPrep = () => {
               <h2 className="text-3xl font-bold text-foreground mb-2">Analysis Complete 🎯</h2>
             </div>
 
-            {/* Extracted Data */}
             <div className="bg-card border border-border rounded-lg p-6">
               <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-3">Required Skills</h3>
               <div className="flex flex-wrap gap-2">
@@ -157,7 +257,6 @@ const JdPrep = () => {
               </div>
             </div>
 
-            {/* Gap Analysis */}
             {jdData.gap_analysis?.missing_skills?.length > 0 && (
               <div className="bg-card border border-destructive/30 rounded-lg p-6">
                 <h3 className="text-xs font-mono text-destructive uppercase tracking-widest mb-3">Skills Gap</h3>
@@ -177,7 +276,6 @@ const JdPrep = () => {
               </div>
             )}
 
-            {/* Mock Interview */}
             <DifficultyPicker selected={difficulty} onSelect={setDifficulty} />
 
             <div>
