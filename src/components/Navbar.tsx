@@ -31,6 +31,9 @@ const Navbar = () => {
           <button onClick={() => navigate("/")} className={linkClass("/")}>
             Topics
           </button>
+          <button onClick={() => navigate("/leaderboard")} className={linkClass("/leaderboard")}>
+            Leaderboard
+          </button>
 
           {/* Interviewee-specific */}
           {(!user || role === "interviewee") && (
