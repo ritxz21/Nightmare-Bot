@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { SessionRow } from "@/lib/types";
+import { useAuth } from "@/hooks/useAuth";
 import Navbar from "@/components/Navbar";
 import {
   ResponsiveContainer,
@@ -18,6 +19,7 @@ import {
 
 const InterviewerDashboard = () => {
   const navigate = useNavigate();
+  const { role } = useAuth();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(false);
@@ -127,66 +129,68 @@ const InterviewerDashboard = () => {
       <main className="flex-1 px-6 py-8 overflow-y-auto">
         <div className="max-w-6xl mx-auto space-y-8">
 
-          {/* Section A: Live Interviews */}
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-widest">Live Interviews</h2>
-              {activeSessions.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-primary/20 text-primary border border-primary/30 animate-pulse">
-                  LIVE · {activeSessions.length}
-                </span>
-              )}
-            </div>
-            {activeSessions.length === 0 ? (
-              <div className="bg-card border border-border/50 rounded-lg p-8 text-center">
-                <p className="text-sm text-muted-foreground font-mono">No active interviews right now.</p>
+          {/* Section A: Live Interviews (interviewer only) */}
+          {role === "interviewer" && (
+            <section>
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-widest">Live Interviews</h2>
+                {activeSessions.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-primary/20 text-primary border border-primary/30 animate-pulse">
+                    LIVE · {activeSessions.length}
+                  </span>
+                )}
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {activeSessions.map((s) => {
-                  const chartData = (s.bluff_history || []).map((p, i) => ({ index: i + 1, score: Math.round(p.score) }));
-                  const concepts = s.concept_coverage || [];
-                  const clearPct = concepts.length > 0
-                    ? Math.round((concepts.filter((c) => c.status === "clear").length / concepts.length) * 100)
-                    : 0;
-                  const elapsed = Math.round((Date.now() - new Date(s.created_at).getTime()) / 60000);
+              {activeSessions.length === 0 ? (
+                <div className="bg-card border border-border/50 rounded-lg p-8 text-center">
+                  <p className="text-sm text-muted-foreground font-mono">No active interviews right now.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {activeSessions.map((s) => {
+                    const chartData = (s.bluff_history || []).map((p, i) => ({ index: i + 1, score: Math.round(p.score) }));
+                    const concepts = s.concept_coverage || [];
+                    const clearPct = concepts.length > 0
+                      ? Math.round((concepts.filter((c) => c.status === "clear").length / concepts.length) * 100)
+                      : 0;
+                    const elapsed = Math.round((Date.now() - new Date(s.created_at).getTime()) / 60000);
 
-                  return (
-                    <div key={s.id} className="bg-card border border-primary/20 rounded-lg p-5 card-glow">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <h3 className="text-sm font-semibold text-foreground">{s.topic_title}</h3>
-                          <p className="text-[10px] font-mono text-muted-foreground">{elapsed}m elapsed</p>
-                        </div>
-                        <div className="text-right">
-                          <p className={`text-2xl font-bold font-mono ${getScoreColor(s.final_bluff_score)}`}>
-                            {Math.round(s.final_bluff_score)}%
-                          </p>
-                          <p className="text-[9px] font-mono text-muted-foreground uppercase">bluff</p>
-                        </div>
-                      </div>
-                      {chartData.length > 1 && (
-                        <ResponsiveContainer width="100%" height={80}>
-                          <LineChart data={chartData}>
-                            <Line type="monotone" dataKey="score" stroke="hsl(0, 72%, 51%)" strokeWidth={2} dot={false} />
-                            <ReferenceLine y={60} stroke="hsl(0, 72%, 51%)" strokeDasharray="3 3" strokeOpacity={0.4} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      )}
-                      <div className="mt-3 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-full max-w-[120px] h-1.5 bg-secondary rounded-full overflow-hidden">
-                            <div className="h-full bg-concept-green rounded-full transition-all" style={{ width: `${clearPct}%` }} />
+                    return (
+                      <div key={s.id} className="bg-card border border-primary/20 rounded-lg p-5 card-glow">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <h3 className="text-sm font-semibold text-foreground">{s.topic_title}</h3>
+                            <p className="text-[10px] font-mono text-muted-foreground">{elapsed}m elapsed</p>
                           </div>
-                          <span className="text-[10px] font-mono text-muted-foreground">{clearPct}% mastery</span>
+                          <div className="text-right">
+                            <p className={`text-2xl font-bold font-mono ${getScoreColor(s.final_bluff_score)}`}>
+                              {Math.round(s.final_bluff_score)}%
+                            </p>
+                            <p className="text-[9px] font-mono text-muted-foreground uppercase">bluff</p>
+                          </div>
+                        </div>
+                        {chartData.length > 1 && (
+                          <ResponsiveContainer width="100%" height={80}>
+                            <LineChart data={chartData}>
+                              <Line type="monotone" dataKey="score" stroke="hsl(0, 72%, 51%)" strokeWidth={2} dot={false} />
+                              <ReferenceLine y={60} stroke="hsl(0, 72%, 51%)" strokeDasharray="3 3" strokeOpacity={0.4} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        )}
+                        <div className="mt-3 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-full max-w-[120px] h-1.5 bg-secondary rounded-full overflow-hidden">
+                              <div className="h-full bg-concept-green rounded-full transition-all" style={{ width: `${clearPct}%` }} />
+                            </div>
+                            <span className="text-[10px] font-mono text-muted-foreground">{clearPct}% mastery</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Section B: Completed Interviews */}
           <section>

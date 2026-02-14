@@ -40,7 +40,7 @@ const Navbar = () => {
           {/* Interviewee-specific */}
           {(!user || role === "interviewee") && (
             <>
-              <button onClick={() => navigate("/resume")} className={linkClass("/resume")}>
+              <button onClick={() => navigate("/resume")} className={`${linkClass("/resume")} leading-tight text-center w-14`}>
                 Resume Review
               </button>
               {user && role === "interviewee" && (
