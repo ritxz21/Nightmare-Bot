@@ -2,7 +2,7 @@
 
 ## Project info
 
-**URL**: [https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID](https://mind-duelist.lovable.app/)
+**URL**: [App](https://mind-duelist.lovable.app/)
 
 ## How can I edit this code?
 
