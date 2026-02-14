@@ -326,6 +326,7 @@ const JobRoleDetail = () => {
                         <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
                           inv.status === "completed" ? "bg-concept-green/10 text-concept-green" :
                           inv.status === "accepted" ? "bg-primary/10 text-primary" :
+                          inv.status === "rejected" ? "bg-destructive/10 text-destructive" :
                           "bg-concept-yellow/10 text-concept-yellow"
                         }`}>{inv.status}</span>
                         <button onClick={() => copyInviteLink(inv.invite_token)} className="text-[10px] font-mono text-primary hover:underline">
