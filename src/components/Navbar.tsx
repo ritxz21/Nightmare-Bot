@@ -1,24 +1,11 @@
-import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import type { User } from "@supabase/supabase-js";
+import { useAuth } from "@/hooks/useAuth";
 
 const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [user, setUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const { user, role } = useAuth();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -26,6 +13,9 @@ const Navbar = () => {
   };
 
   const isActive = (path: string) => location.pathname === path;
+
+  const linkClass = (path: string) =>
+    `text-xs font-mono transition-colors ${isActive(path) ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`;
 
   return (
     <header className="border-b border-border/50 px-6 py-4">
@@ -37,24 +27,49 @@ const Navbar = () => {
           </span>
         </button>
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate("/dashboard")}
-            className={`text-xs font-mono transition-colors ${isActive("/dashboard") ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            Dashboard
+          {/* Always visible */}
+          <button onClick={() => navigate("/")} className={linkClass("/")}>
+            Topics
           </button>
-          <button
-            onClick={() => navigate("/resume")}
-            className={`text-xs font-mono transition-colors ${isActive("/resume") ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            Resume
-          </button>
-          <button
-            onClick={() => navigate("/history")}
-            className={`text-xs font-mono transition-colors ${isActive("/history") ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            History
-          </button>
+
+          {/* Interviewee-specific */}
+          {(!user || role === "interviewee") && (
+            <>
+              <button onClick={() => navigate("/resume")} className={linkClass("/resume")}>
+                Resume
+              </button>
+              {user && role === "interviewee" && (
+                <>
+                  <button onClick={() => navigate("/jd-prep")} className={linkClass("/jd-prep")}>
+                    JD Prep
+                  </button>
+                  <button onClick={() => navigate("/invites")} className={linkClass("/invites")}>
+                    Invites
+                  </button>
+                </>
+              )}
+            </>
+          )}
+
+          {/* Interviewer-specific */}
+          {user && role === "interviewer" && (
+            <button onClick={() => navigate("/company")} className={linkClass("/company")}>
+              Company
+            </button>
+          )}
+
+          {/* Authenticated common */}
+          {user && (
+            <>
+              <button onClick={() => navigate("/dashboard")} className={linkClass("/dashboard")}>
+                Dashboard
+              </button>
+              <button onClick={() => navigate("/history")} className={linkClass("/history")}>
+                History
+              </button>
+            </>
+          )}
+
           {user ? (
             <div className="flex items-center gap-3">
               <div className="w-6 h-6 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center">
@@ -62,18 +77,17 @@ const Navbar = () => {
                   {user.email?.[0] || "U"}
                 </span>
               </div>
-              <button
-                onClick={handleLogout}
-                className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
-              >
+              {role && (
+                <span className="text-[9px] font-mono text-muted-foreground/60 uppercase px-1.5 py-0.5 rounded bg-secondary">
+                  {role}
+                </span>
+              )}
+              <button onClick={handleLogout} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
                 Logout
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => navigate("/auth")}
-              className="text-xs font-mono text-primary hover:text-primary/80 transition-colors"
-            >
+            <button onClick={() => navigate("/auth")} className="text-xs font-mono text-primary hover:text-primary/80 transition-colors">
               Sign In
             </button>
           )}

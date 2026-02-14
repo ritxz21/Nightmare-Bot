@@ -14,45 +14,202 @@ export type Database = {
   }
   public: {
     Tables: {
+      ats_reports: {
+        Row: {
+          ats_score: number
+          created_at: string
+          id: string
+          report: Json
+          resume_hash: string
+          user_id: string
+        }
+        Insert: {
+          ats_score?: number
+          created_at?: string
+          id?: string
+          report?: Json
+          resume_hash: string
+          user_id: string
+        }
+        Update: {
+          ats_score?: number
+          created_at?: string
+          id?: string
+          report?: Json
+          resume_hash?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      interview_invites: {
+        Row: {
+          completed_at: string | null
+          deadline: string | null
+          id: string
+          interviewee_id: string | null
+          invite_email: string | null
+          invite_token: string | null
+          job_role_id: string
+          sent_at: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          deadline?: string | null
+          id?: string
+          interviewee_id?: string | null
+          invite_email?: string | null
+          invite_token?: string | null
+          job_role_id: string
+          sent_at?: string
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          deadline?: string | null
+          id?: string
+          interviewee_id?: string | null
+          invite_email?: string | null
+          invite_token?: string | null
+          job_role_id?: string
+          sent_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_invites_job_role_id_fkey"
+            columns: ["job_role_id"]
+            isOneToOne: false
+            referencedRelation: "job_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       interview_sessions: {
         Row: {
+          ats_snapshot: Json | null
           bluff_history: Json
           concept_coverage: Json
           created_at: string
           final_bluff_score: number
           id: string
+          job_role_id: string | null
+          mode: string
           status: string
           topic_id: string
           topic_title: string
           transcript: Json
           updated_at: string
           user_id: string
+          video_url: string | null
         }
         Insert: {
+          ats_snapshot?: Json | null
           bluff_history?: Json
           concept_coverage?: Json
           created_at?: string
           final_bluff_score?: number
           id?: string
+          job_role_id?: string | null
+          mode?: string
           status?: string
           topic_id: string
           topic_title: string
           transcript?: Json
           updated_at?: string
           user_id: string
+          video_url?: string | null
         }
         Update: {
+          ats_snapshot?: Json | null
           bluff_history?: Json
           concept_coverage?: Json
           created_at?: string
           final_bluff_score?: number
           id?: string
+          job_role_id?: string | null
+          mode?: string
           status?: string
           topic_id?: string
           topic_title?: string
           transcript?: Json
           updated_at?: string
           user_id?: string
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_sessions_job_role_id_fkey"
+            columns: ["job_role_id"]
+            isOneToOne: false
+            referencedRelation: "job_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      job_descriptions: {
+        Row: {
+          created_at: string
+          extracted_data: Json
+          gap_analysis: Json
+          id: string
+          raw_text: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          extracted_data?: Json
+          gap_analysis?: Json
+          id?: string
+          raw_text: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          extracted_data?: Json
+          gap_analysis?: Json
+          id?: string
+          raw_text?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      job_roles: {
+        Row: {
+          company_name: string
+          created_at: string
+          custom_topics: Json
+          difficulty_level: string
+          evaluation_weights: Json
+          id: string
+          interviewer_id: string
+          job_title: string
+          min_ats_score: number | null
+        }
+        Insert: {
+          company_name: string
+          created_at?: string
+          custom_topics?: Json
+          difficulty_level?: string
+          evaluation_weights?: Json
+          id?: string
+          interviewer_id: string
+          job_title: string
+          min_ats_score?: number | null
+        }
+        Update: {
+          company_name?: string
+          created_at?: string
+          custom_topics?: Json
+          difficulty_level?: string
+          evaluation_weights?: Json
+          id?: string
+          interviewer_id?: string
+          job_title?: string
+          min_ats_score?: number | null
         }
         Relationships: []
       }
@@ -109,6 +266,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_invite: {
+        Args: { _token: string; _user_id: string }
+        Returns: string
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -117,6 +278,18 @@ export type Database = {
         Returns: boolean
       }
       is_session_owner: { Args: { session_id: string }; Returns: boolean }
+      lookup_invite_by_token: {
+        Args: { _token: string }
+        Returns: {
+          company_name: string
+          deadline: string
+          difficulty_level: string
+          id: string
+          job_role_id: string
+          job_title: string
+          status: string
+        }[]
+      }
     }
     Enums: {
       app_role: "interviewer" | "interviewee"

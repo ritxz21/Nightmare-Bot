@@ -26,8 +26,9 @@ const Interview = () => {
   const navigate = useNavigate();
   const difficulty = (searchParams.get("difficulty") as DifficultyLevel) || DEFAULT_DIFFICULTY;
   const diffConfig = DIFFICULTIES.find((d) => d.id === difficulty);
+  const jobRoleId = searchParams.get("jobRoleId") || null;
+  const inviteId = searchParams.get("inviteId") || null;
 
-  // Support both predefined topics and custom resume-based topics
   const topic = (() => {
     const predefined = TOPICS.find((t) => t.id === topicId);
     if (predefined) return predefined;
@@ -47,6 +48,7 @@ const Interview = () => {
   const [concepts, setConcepts] = useState<ConceptNode[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
 
   const transcriptRef = useRef<TranscriptEntry[]>([]);
   const lastAnalysisRef = useRef<AnalysisResult | null>(null);
@@ -55,6 +57,8 @@ const Interview = () => {
   const conversationRef = useRef<ReturnType<typeof useConversation> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const bluffHistoryRef = useRef<{ timestamp: string; score: number }[]>([]);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     if (topic) {
@@ -65,20 +69,22 @@ const Interview = () => {
   const createSession = useCallback(async () => {
     if (!topic) return;
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) return; // Anonymous users won't persist sessions
     const { data, error: insertError } = await supabase
       .from("interview_sessions")
       .insert({
         user_id: user.id,
         topic_id: topic.id,
         topic_title: topic.title,
-        concept_coverage: topic.coreConcepts.map((name) => ({ name, status: "missing" })),
+        concept_coverage: topic.coreConcepts.map((name) => ({ name, status: "missing" })) as unknown as import("@/integrations/supabase/types").Json,
+        mode: jobRoleId ? "company" : "mock",
+        ...(jobRoleId ? { job_role_id: jobRoleId } : {}),
       })
       .select("id")
       .single();
     if (insertError) { console.error("Failed to create session:", insertError); return; }
     sessionIdRef.current = data.id;
-  }, [topic]);
+  }, [topic, jobRoleId]);
 
   const persistSession = useCallback(async (updates: Record<string, unknown>) => {
     if (!sessionIdRef.current) return;
@@ -91,7 +97,6 @@ const Interview = () => {
 
   const analyzeUserResponse = useCallback(async (userText: string) => {
     if (!topic || !userText.trim()) return;
-
     setIsAnalyzing(true);
     try {
       const { data, error: fnError } = await supabase.functions.invoke("analyze-response", {
@@ -105,38 +110,20 @@ const Interview = () => {
             : null,
         },
       });
-
       if (fnError) { console.error("Analysis error:", fnError); return; }
-
       const analysis = data as AnalysisResult;
       lastAnalysisRef.current = analysis;
       setBluffScore(analysis.bluff_probability);
-
-      bluffHistoryRef.current = [
-        ...bluffHistoryRef.current,
-        { timestamp: new Date().toISOString(), score: analysis.bluff_probability },
-      ];
-
+      bluffHistoryRef.current = [...bluffHistoryRef.current, { timestamp: new Date().toISOString(), score: analysis.bluff_probability }];
       setConcepts((prev) => {
         const updated: ConceptNode[] = prev.map((concept) => {
-          if (analysis.concepts_mentioned_clearly.some((c) => c.toLowerCase() === concept.name.toLowerCase())) {
-            return { name: concept.name, status: "clear" as const };
-          }
-          if (analysis.concepts_mentioned_shallowly.some((c) => c.toLowerCase() === concept.name.toLowerCase())) {
-            return { name: concept.name, status: concept.status === "clear" ? "clear" as const : "shallow" as const };
-          }
+          if (analysis.concepts_mentioned_clearly.some((c) => c.toLowerCase() === concept.name.toLowerCase())) return { name: concept.name, status: "clear" as const };
+          if (analysis.concepts_mentioned_shallowly.some((c) => c.toLowerCase() === concept.name.toLowerCase())) return { name: concept.name, status: concept.status === "clear" ? "clear" as const : "shallow" as const };
           return concept;
         });
-
-        persistSession({
-          bluff_history: bluffHistoryRef.current,
-          concept_coverage: updated,
-          final_bluff_score: analysis.bluff_probability,
-        });
-
+        persistSession({ bluff_history: bluffHistoryRef.current, concept_coverage: updated, final_bluff_score: analysis.bluff_probability });
         return updated;
       });
-
       if (analysis.follow_up_question && conversationRef.current?.status === "connected") {
         conversationRef.current.sendContextualUpdate(
           `Based on the user's response, ask this follow-up question: "${analysis.follow_up_question}". Be direct and slightly adversarial. ${analysis.bluff_probability > 60 ? "The user appears to be bluffing — call it out subtly." : ""}`
@@ -154,10 +141,7 @@ const Interview = () => {
     if (analyzeTimeoutRef.current) clearTimeout(analyzeTimeoutRef.current);
     analyzeTimeoutRef.current = setTimeout(() => {
       const fullText = pendingUserTextRef.current.trim();
-      if (fullText) {
-        analyzeUserResponse(fullText);
-        pendingUserTextRef.current = "";
-      }
+      if (fullText) { analyzeUserResponse(fullText); pendingUserTextRef.current = ""; }
     }, 2000);
   }, [analyzeUserResponse]);
 
@@ -165,11 +149,7 @@ const Interview = () => {
     onConnect: () => { setVoiceStatus("listening"); setError(null); },
     onDisconnect: () => { setVoiceStatus("idle"); },
     onMessage: (payload) => {
-      const entry: TranscriptEntry = {
-        role: payload.role === "agent" ? "agent" : "user",
-        text: payload.message,
-        timestamp: new Date(),
-      };
+      const entry: TranscriptEntry = { role: payload.role === "agent" ? "agent" : "user", text: payload.message, timestamp: new Date() };
       if (entry.text) {
         transcriptRef.current = [...transcriptRef.current, entry];
         setTranscript([...transcriptRef.current]);
@@ -177,20 +157,48 @@ const Interview = () => {
         if (payload.role === "user") scheduleAnalysis(entry.text);
       }
     },
-    onError: (err) => {
-      console.error("ElevenLabs error:", err);
-      setError("Voice connection failed. Please try again.");
-      setVoiceStatus("idle");
-    },
+    onError: (err) => { console.error("ElevenLabs error:", err); setError("Voice connection failed. Please try again."); setVoiceStatus("idle"); },
   });
 
   conversationRef.current = conversation;
 
   useEffect(() => {
-    if (conversation.status === "connected") {
-      setVoiceStatus(conversation.isSpeaking ? "speaking" : "listening");
-    }
+    if (conversation.status === "connected") setVoiceStatus(conversation.isSpeaking ? "speaking" : "listening");
   }, [conversation.isSpeaking, conversation.status]);
+
+  // Video recording
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+      recordedChunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
+      recorder.start(1000);
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Recording failed:", err);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!mediaRecorderRef.current) return;
+    mediaRecorderRef.current.stop();
+    mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+    setIsRecording(false);
+
+    // Upload video
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && sessionIdRef.current && recordedChunksRef.current.length > 0) {
+      const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
+      const path = `${user.id}/${sessionIdRef.current}.webm`;
+      const { error: uploadErr } = await supabase.storage.from("interview-videos").upload(path, blob);
+      if (!uploadErr) {
+        const { data: urlData } = supabase.storage.from("interview-videos").getPublicUrl(path);
+        await persistSession({ video_url: urlData.publicUrl });
+      }
+    }
+  };
 
   const handleStartInterview = useCallback(async () => {
     setVoiceStatus("connecting");
@@ -201,6 +209,8 @@ const Interview = () => {
       const { data, error: fnError } = await supabase.functions.invoke("elevenlabs-signed-url");
       if (fnError || !data?.signed_url) throw new Error(fnError?.message || "Failed to get signed URL");
       await conversation.startSession({ signedUrl: data.signed_url });
+      // Auto-start video recording
+      startRecording();
     } catch (err) {
       console.error("Failed to start interview:", err);
       setError(err instanceof Error ? err.message : "Failed to start interview");
@@ -209,13 +219,19 @@ const Interview = () => {
   }, [conversation, createSession]);
 
   const handleEndInterview = useCallback(async () => {
+    await stopRecording();
     await conversation.endSession();
+    // Update invite status if company interview
+    if (inviteId) {
+      await supabase.from("interview_invites").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", inviteId);
+    }
     await persistSession({ status: "completed" });
     const sid = sessionIdRef.current;
     sessionIdRef.current = null;
     setVoiceStatus("idle");
     if (sid) navigate(`/results/${sid}`);
-  }, [conversation, persistSession, navigate]);
+    else navigate("/");
+  }, [conversation, persistSession, navigate, inviteId]);
 
   if (!topic) {
     return (
@@ -233,21 +249,20 @@ const Interview = () => {
       <header className="border-b border-border/50 px-4 py-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => { if (voiceStatus !== "idle") handleEndInterview(); navigate("/"); }}
-              className="text-muted-foreground hover:text-foreground transition-colors text-sm font-mono"
-            >←</button>
+            <button onClick={() => { if (voiceStatus !== "idle") handleEndInterview(); navigate("/"); }} className="text-muted-foreground hover:text-foreground transition-colors text-sm font-mono">←</button>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-primary animate-pulse-glow" />
               <span className="text-sm font-mono text-muted-foreground tracking-wider uppercase">{topic.title}</span>
             </div>
             {diffConfig && (
-              <span className="text-xs font-mono text-muted-foreground bg-secondary px-2 py-0.5 rounded">
-                {diffConfig.emoji} {diffConfig.label}
-              </span>
+              <span className="text-xs font-mono text-muted-foreground bg-secondary px-2 py-0.5 rounded">{diffConfig.emoji} {diffConfig.label}</span>
+            )}
+            {jobRoleId && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">COMPANY</span>
             )}
           </div>
           <div className="flex items-center gap-3">
+            {isRecording && <span className="text-[10px] font-mono text-primary animate-pulse flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-primary" />REC</span>}
             {isAnalyzing && <span className="text-[10px] font-mono text-muted-foreground animate-pulse">analyzing...</span>}
             {voiceStatus !== "idle" && (
               <button onClick={handleEndInterview} className="px-4 py-1.5 rounded-md text-xs font-mono bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 transition-colors">
