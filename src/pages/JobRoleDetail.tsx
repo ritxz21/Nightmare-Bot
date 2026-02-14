@@ -259,12 +259,15 @@ const JobRoleDetail = () => {
                   placeholder="candidate@email.com"
                   className="flex-1 px-3 py-2 rounded-md bg-secondary border border-border text-foreground text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary"
                 />
-                <input
-                  type="date"
-                  value={inviteDeadline}
-                  onChange={(e) => setInviteDeadline(e.target.value)}
-                  className="px-3 py-2 rounded-md bg-secondary border border-border text-foreground text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary"
-                />
+                <div className="relative">
+                  <label className="text-[10px] font-mono text-muted-foreground uppercase absolute -top-4 left-0">Deadline</label>
+                  <input
+                    type="date"
+                    value={inviteDeadline}
+                    onChange={(e) => setInviteDeadline(e.target.value)}
+                    className="px-3 py-2 rounded-md bg-secondary border border-border text-foreground text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
                 <button onClick={sendInvite} disabled={sending} className="px-5 py-2 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50">
                   {sending ? "..." : "Send Invite"}
                 </button>
