@@ -32,11 +32,17 @@ const CompanyDashboard = () => {
   }, [user, authLoading, role]);
 
   const loadRoles = async () => {
+    if (!user) { setLoading(false); return; }
     const { data, error } = await supabase
       .from("job_roles")
       .select("*")
+      .eq("interviewer_id", user.id)
       .order("created_at", { ascending: false });
-    if (!error && data) setJobRoles(data as unknown as JobRole[]);
+    if (error) {
+      console.error("Failed to load job roles:", error);
+      toast.error("Failed to load job roles");
+    }
+    if (data) setJobRoles(data as unknown as JobRole[]);
     setLoading(false);
   };
 
