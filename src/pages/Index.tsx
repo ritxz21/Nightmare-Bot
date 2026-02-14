@@ -2,14 +2,17 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TOPICS } from "@/lib/topics";
 import { TopicCard } from "@/components/TopicCard";
+import { DifficultyPicker } from "@/components/DifficultyPicker";
+import { DifficultyLevel, DEFAULT_DIFFICULTY } from "@/lib/difficulty";
 
 const Index = () => {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [difficulty, setDifficulty] = useState<DifficultyLevel>(DEFAULT_DIFFICULTY);
   const navigate = useNavigate();
 
   const handleStart = () => {
     if (!selectedTopic) return;
-    navigate(`/interview/${selectedTopic}`);
+    navigate(`/interview/${selectedTopic}?difficulty=${difficulty}`);
   };
 
   return (
@@ -24,6 +27,9 @@ const Index = () => {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            <button onClick={() => navigate("/resume")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
+              Resume
+            </button>
             <button onClick={() => navigate("/dashboard")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
               Interviewer
             </button>
@@ -39,7 +45,7 @@ const Index = () => {
 
       {/* Hero */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 py-16">
-        <div className="max-w-3xl w-full text-center mb-16">
+        <div className="max-w-3xl w-full text-center mb-12">
           <h1 className="text-5xl md:text-7xl font-bold text-foreground tracking-tight leading-[1.1] mb-6">
             Do you <span className="text-primary text-glow">really</span>{" "}
             understand it?
@@ -48,6 +54,11 @@ const Index = () => {
             An adversarial AI interviewer that stress-tests your knowledge.
             No hand-waving. No bluffing. Just understanding.
           </p>
+        </div>
+
+        {/* Difficulty Selection */}
+        <div className="w-full max-w-3xl mb-10">
+          <DifficultyPicker selected={difficulty} onSelect={setDifficulty} />
         </div>
 
         {/* Topic Selection */}

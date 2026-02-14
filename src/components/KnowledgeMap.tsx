@@ -1,3 +1,5 @@
+import { motion, AnimatePresence } from "framer-motion";
+
 export type ConceptStatus = "missing" | "shallow" | "clear";
 
 export interface ConceptNode {
@@ -26,8 +28,18 @@ export const KnowledgeMap = ({ concepts }: KnowledgeMapProps) => {
     }
   };
 
+  const getGlow = (status: ConceptStatus) => {
+    switch (status) {
+      case "clear": return "0 0 12px hsl(var(--concept-green) / 0.4)";
+      case "shallow": return "0 0 8px hsl(var(--concept-yellow) / 0.3)";
+      case "missing": return "none";
+    }
+  };
+
   const clearCount = concepts.filter((c) => c.status === "clear").length;
   const shallowCount = concepts.filter((c) => c.status === "shallow").length;
+  const total = concepts.length;
+  const progress = total > 0 ? ((clearCount + shallowCount * 0.5) / total) * 100 : 0;
 
   return (
     <div className="space-y-4">
@@ -36,8 +48,18 @@ export const KnowledgeMap = ({ concepts }: KnowledgeMapProps) => {
           Knowledge Map
         </h3>
         <span className="text-xs font-mono text-muted-foreground">
-          {clearCount}/{concepts.length} mastered
+          {clearCount}/{total} mastered
         </span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
+        <motion.div
+          className="h-full bg-gradient-to-r from-concept-yellow to-concept-green rounded-full"
+          initial={{ width: 0 }}
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+        />
       </div>
 
       {/* Legend */}
@@ -58,19 +80,41 @@ export const KnowledgeMap = ({ concepts }: KnowledgeMapProps) => {
 
       {/* Grid */}
       <div className="grid grid-cols-2 gap-2">
-        {concepts.map((concept) => (
-          <div
-            key={concept.name}
-            className={`
-              px-3 py-2.5 rounded-md border text-xs font-mono
-              flex items-center gap-2 transition-all duration-500
-              ${getStatusColor(concept.status)}
-            `}
-          >
-            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${getStatusDot(concept.status)}`} />
-            <span className="truncate">{concept.name}</span>
-          </div>
-        ))}
+        <AnimatePresence mode="popLayout">
+          {concepts.map((concept, i) => (
+            <motion.div
+              key={concept.name}
+              layout
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+                boxShadow: getGlow(concept.status),
+              }}
+              transition={{
+                duration: 0.5,
+                delay: i * 0.03,
+                boxShadow: { duration: 0.8 },
+              }}
+              className={`
+                px-3 py-2.5 rounded-md border text-xs font-mono
+                flex items-center gap-2 transition-colors duration-500
+                ${getStatusColor(concept.status)}
+              `}
+            >
+              <motion.div
+                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${getStatusDot(concept.status)}`}
+                animate={
+                  concept.status !== "missing"
+                    ? { scale: [1, 1.4, 1] }
+                    : { scale: 1 }
+                }
+                transition={{ duration: 0.6, ease: "easeInOut" }}
+              />
+              <span className="truncate">{concept.name}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </div>
   );
