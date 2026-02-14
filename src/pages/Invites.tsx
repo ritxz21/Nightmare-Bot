@@ -51,6 +51,33 @@ const Invites = () => {
     if (!authLoading) loadInvites();
   }, [user, authLoading]);
 
+  // Realtime subscription for new/updated invites
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel("my-invites-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "interview_invites" },
+        (payload) => {
+          const row = payload.new as any;
+          if (payload.eventType === "INSERT" && row.interviewee_id === user.id) {
+            setInvites((prev) => {
+              if (prev.some((i) => i.id === row.id)) return prev;
+              // Reload to get joined job_roles data
+              loadInvites();
+              return prev;
+            });
+            toast.info("New interview invite received!");
+          } else if (payload.eventType === "UPDATE" && row.interviewee_id === user.id) {
+            loadInvites();
+          }
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
   const startCompanyInterview = (invite: InterviewInvite) => {
     if (!invite.job_roles) return;
     const jr = invite.job_roles;
