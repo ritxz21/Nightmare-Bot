@@ -1,10 +1,1 @@
-project_id = "uhaikuxixzqqobaexpxq"
-
-[functions.analyze-response]
-verify_jwt = false
-
-[functions.elevenlabs-signed-url]
-verify_jwt = false
-
-[functions.extract-resume]
-verify_jwt = false
+project_id = "ngmwljnygjuqsvzqseph"
