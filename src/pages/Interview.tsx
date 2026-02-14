@@ -286,13 +286,17 @@ const Interview = () => {
   }, [conversation, createSession, topic, jobRoleId]);
 
   const handleEndInterview = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    sessionIdRef.current = null; // Clear before endSession to prevent onDisconnect from marking as "disconnected"
     await stopRecording();
     await conversation.endSession();
     // Update invite status if company interview
     if (inviteId) {
       await supabase.from("interview_invites").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", inviteId);
     }
-    await persistSession({ status: "completed" });
+    if (sid) {
+      await supabase.from("interview_sessions").update({ status: "completed" }).eq("id", sid);
+    }
     
     const score = bluffHistoryRef.current.length > 0
       ? bluffHistoryRef.current[bluffHistoryRef.current.length - 1].score
@@ -305,13 +309,11 @@ const Interview = () => {
       // Show leaderboard prompt for anonymous users
       setShowLeaderboardPrompt(true);
     } else {
-      const sid = sessionIdRef.current;
-      sessionIdRef.current = null;
       setVoiceStatus("idle");
       if (sid) navigate(`/results/${sid}`);
       else navigate("/");
     }
-  }, [conversation, persistSession, navigate, inviteId, bluffScore, topic]);
+  }, [conversation, navigate, inviteId, bluffScore, topic]);
 
   const handleLeaderboardSubmit = async (name: string) => {
     if (!topic) return;
