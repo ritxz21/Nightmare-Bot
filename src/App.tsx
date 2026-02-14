@@ -10,6 +10,10 @@ import History from "./pages/History";
 import Results from "./pages/Results";
 import InterviewerDashboard from "./pages/InterviewerDashboard";
 import ResumeInterview from "./pages/ResumeInterview";
+import JdPrep from "./pages/JdPrep";
+import Invites from "./pages/Invites";
+import CompanyDashboard from "./pages/CompanyDashboard";
+import JobRoleDetail from "./pages/JobRoleDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +32,10 @@ const App = () => (
           <Route path="/results/:sessionId" element={<Results />} />
           <Route path="/dashboard" element={<InterviewerDashboard />} />
           <Route path="/resume" element={<ResumeInterview />} />
+          <Route path="/jd-prep" element={<JdPrep />} />
+          <Route path="/invites" element={<Invites />} />
+          <Route path="/company" element={<CompanyDashboard />} />
+          <Route path="/company/:jobRoleId" element={<JobRoleDetail />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

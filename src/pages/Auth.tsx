@@ -2,10 +2,13 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
+type RoleChoice = "interviewee" | "interviewer";
+
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [roleChoice, setRoleChoice] = useState<RoleChoice>("interviewee");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -19,8 +22,18 @@ const Auth = () => {
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) {
         setError(signInError.message);
-      } else {
-        navigate("/dashboard");
+        setLoading(false);
+        return;
+      }
+      // Fetch role to redirect
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        navigate(roleData?.role === "interviewer" ? "/company" : "/dashboard");
       }
     } else {
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -30,8 +43,16 @@ const Auth = () => {
       });
       if (signUpError) {
         setError(signUpError.message);
-      } else if (data.user) {
-        navigate("/dashboard");
+        setLoading(false);
+        return;
+      }
+      if (data.user) {
+        // Assign role
+        await supabase.from("user_roles").insert({
+          user_id: data.user.id,
+          role: roleChoice,
+        });
+        navigate(roleChoice === "interviewer" ? "/company" : "/dashboard");
       }
     }
     setLoading(false);
@@ -83,6 +104,45 @@ const Auth = () => {
               placeholder="••••••••"
             />
           </div>
+
+          {/* Role Picker - only on signup */}
+          {!isLogin && (
+            <div>
+              <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider block mb-2">
+                I am a...
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRoleChoice("interviewee")}
+                  className={`px-4 py-3 rounded-lg text-sm font-mono border transition-all ${
+                    roleChoice === "interviewee"
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-secondary text-muted-foreground hover:border-primary/40"
+                  }`}
+                >
+                  🎯 Candidate
+                  <span className="block text-[10px] text-muted-foreground mt-1">
+                    Take interviews
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoleChoice("interviewer")}
+                  className={`px-4 py-3 rounded-lg text-sm font-mono border transition-all ${
+                    roleChoice === "interviewer"
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-secondary text-muted-foreground hover:border-primary/40"
+                  }`}
+                >
+                  🔍 Interviewer
+                  <span className="block text-[10px] text-muted-foreground mt-1">
+                    Hire candidates
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {error && <p className="text-xs text-destructive font-mono">{error}</p>}
 
