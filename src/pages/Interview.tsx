@@ -263,7 +263,6 @@ const Interview = () => {
             prompt: {
               prompt: `You are conducting a technical interview for the role of "${roleName}". The candidate is being assessed on "${topic?.title}". Core concepts to probe: ${topic?.coreConcepts?.join(", ")}. Start by asking about "${firstTopic}" and progressively go deeper. Be professional but slightly adversarial — probe for genuine understanding vs surface-level answers.`,
             },
-            firstMessage: `Hello! I'll be your interviewer today for the ${roleName ? roleName + " position" : "interview"}. Let's start with ${topic?.title} — can you walk me through your understanding of ${firstTopic}?`,
           },
         };
       } else {
@@ -272,7 +271,6 @@ const Interview = () => {
             prompt: {
               prompt: `You are conducting a technical interview on "${topic?.title}". Core concepts to probe: ${topic?.coreConcepts?.join(", ")}. Start with "${topic?.coreConcepts?.[0] || topic?.title}" and progressively go deeper. Be professional but slightly adversarial.`,
             },
-            firstMessage: `Hi there! Today we'll dive into ${topic?.title}. Let's start — can you tell me about ${topic?.coreConcepts?.[0] || topic?.title}?`,
           },
         };
       }
