@@ -62,6 +62,7 @@ const Interview = () => {
   const bluffHistoryRef = useRef<{ timestamp: string; score: number }[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const startingRef = useRef(false);
 
   useEffect(() => {
     if (topic) {
@@ -72,7 +73,22 @@ const Interview = () => {
   const createSession = useCallback(async () => {
     if (!topic) return;
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return; // Anonymous users won't persist sessions
+    if (!user) return;
+
+    // Check for existing in-progress session for this topic to prevent duplicates
+    const { data: existing } = await supabase
+      .from("interview_sessions")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("topic_id", topic.id)
+      .eq("status", "in_progress")
+      .maybeSingle();
+
+    if (existing) {
+      sessionIdRef.current = existing.id;
+      return;
+    }
+
     const { data, error: insertError } = await supabase
       .from("interview_sessions")
       .insert({
@@ -204,6 +220,8 @@ const Interview = () => {
   };
 
   const handleStartInterview = useCallback(async () => {
+    if (startingRef.current) return;
+    startingRef.current = true;
     setVoiceStatus("connecting");
     setError(null);
     try {
@@ -244,8 +262,10 @@ const Interview = () => {
       console.error("Failed to start interview:", err);
       setError(err instanceof Error ? err.message : "Failed to start interview");
       setVoiceStatus("idle");
+    } finally {
+      startingRef.current = false;
     }
-  }, [conversation, createSession]);
+  }, [conversation, createSession, topic, jobRoleId]);
 
   const handleEndInterview = useCallback(async () => {
     await stopRecording();
