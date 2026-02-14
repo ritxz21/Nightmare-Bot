@@ -199,9 +199,11 @@ const Interview = () => {
   const handleEndInterview = useCallback(async () => {
     await conversation.endSession();
     await persistSession({ status: "completed" });
+    const sid = sessionIdRef.current;
     sessionIdRef.current = null;
     setVoiceStatus("idle");
-  }, [conversation, persistSession]);
+    if (sid) navigate(`/results/${sid}`);
+  }, [conversation, persistSession, navigate]);
 
   if (!topic) {
     return (

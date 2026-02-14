@@ -1,19 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { KnowledgeMap, ConceptNode } from "@/components/KnowledgeMap";
-
-interface SessionRow {
-  id: string;
-  topic_id: string;
-  topic_title: string;
-  transcript: { role: string; text: string; timestamp: string }[];
-  bluff_history: { timestamp: string; score: number }[];
-  concept_coverage: ConceptNode[];
-  final_bluff_score: number;
-  status: string;
-  created_at: string;
-}
+import { KnowledgeMap } from "@/components/KnowledgeMap";
+import { SessionRow } from "@/lib/types";
 
 const History = () => {
   const navigate = useNavigate();
