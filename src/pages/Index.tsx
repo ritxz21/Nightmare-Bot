@@ -23,7 +23,14 @@ const Index = () => {
               DeepFake Interviewer
             </span>
           </div>
-          <span className="text-xs font-mono text-muted-foreground/50">v0.1</span>
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate("/history")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
+              History
+            </button>
+            <button onClick={() => navigate("/auth")} className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors">
+              Sign In
+            </button>
+          </div>
         </div>
       </header>
 
