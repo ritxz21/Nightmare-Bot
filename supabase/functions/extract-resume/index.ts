@@ -15,6 +15,32 @@ async function sha256(text: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function extractJsonFromResponse(response: string): unknown {
+  let cleaned = response
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+
+  const jsonStart = cleaned.search(/[\{\[]/);
+  const jsonEnd = cleaned.lastIndexOf(jsonStart !== -1 && cleaned[jsonStart] === '[' ? ']' : '}');
+
+  if (jsonStart === -1 || jsonEnd === -1) {
+    throw new Error("No JSON object found in response");
+  }
+
+  cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (_e) {
+    cleaned = cleaned
+      .replace(/,\s*}/g, "}")
+      .replace(/,\s*]/g, "]")
+      .replace(/[\x00-\x1F\x7F]/g, "");
+    return JSON.parse(cleaned);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -31,7 +57,6 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    // Get authenticated user
     const { data: { user } } = await supabase.auth.getUser();
 
     const { resumeText } = await req.json();
@@ -42,7 +67,6 @@ serve(async (req) => {
       });
     }
 
-    // Compute hash for deterministic caching
     const resumeHash = await sha256(resumeText.trim());
 
     // Check cache if user is authenticated
@@ -68,29 +92,42 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         temperature: 0,
         messages: [
           {
             role: "system",
-            content: `You are a technical resume analyzer. Extract the key technical topics, skills, and projects from the resume. For each project, identify what technologies and concepts were used. Generate a structured interview plan with core concepts to assess. Be deterministic — always produce the same output for the same input.`,
+            content: `You are a strict technical resume parser. Your job is to extract ONLY information that is EXPLICITLY written in the resume text provided.
+
+CRITICAL RULES:
+- Extract ONLY skills, technologies, and tools that are EXPLICITLY mentioned by name in the resume text.
+- Do NOT infer, guess, or hallucinate any skills that are not directly written in the resume.
+- If a skill is not literally mentioned in the text, do NOT include it.
+- For projects, only include projects that are clearly described in the resume.
+- For interview topics, base them ONLY on the skills and projects that are explicitly mentioned.
+- Be deterministic — always produce the same output for the same input.
+
+Example: If the resume says "Built a REST API using Node.js and Express", you may extract "Node.js", "Express", "REST API". You must NOT add "JavaScript", "MongoDB", "Docker" or any other technology unless they are explicitly written in the resume.`,
           },
-          { role: "user", content: resumeText },
+          {
+            role: "user",
+            content: `Here is the resume text to parse. Extract ONLY what is explicitly written:\n\n${resumeText}`,
+          },
         ],
         tools: [
           {
             type: "function",
             function: {
               name: "extract_resume_data",
-              description: "Extract structured data from a resume for interview preparation",
+              description: "Extract structured data from a resume. Only include information explicitly present in the resume text. Never infer or hallucinate skills.",
               parameters: {
                 type: "object",
                 properties: {
-                  candidate_name: { type: "string", description: "Name of the candidate" },
+                  candidate_name: { type: "string", description: "Name of the candidate as written in the resume" },
                   skills: {
                     type: "array",
                     items: { type: "string" },
-                    description: "List of technical skills mentioned",
+                    description: "List of technical skills EXPLICITLY mentioned by name in the resume. Do NOT infer or add skills not written in the text.",
                   },
                   projects: {
                     type: "array",
@@ -99,27 +136,31 @@ serve(async (req) => {
                       properties: {
                         name: { type: "string" },
                         description: { type: "string" },
-                        technologies: { type: "array", items: { type: "string" } },
+                        technologies: {
+                          type: "array",
+                          items: { type: "string" },
+                          description: "Technologies EXPLICITLY mentioned for this project only",
+                        },
                       },
                       required: ["name", "description", "technologies"],
                     },
-                    description: "Projects from the resume",
+                    description: "Projects explicitly described in the resume",
                   },
                   interview_topics: {
                     type: "array",
                     items: {
                       type: "object",
                       properties: {
-                        title: { type: "string", description: "Topic title for interview" },
+                        title: { type: "string", description: "Topic title derived from explicitly mentioned skills/projects" },
                         core_concepts: {
                           type: "array",
                           items: { type: "string" },
-                          description: "5-8 core concepts to assess under this topic",
+                          description: "5-8 core concepts to assess, based ONLY on what the resume explicitly mentions",
                         },
                       },
                       required: ["title", "core_concepts"],
                     },
-                    description: "3-5 interview topics derived from the resume, each with core concepts",
+                    description: "3-5 interview topics derived from explicitly mentioned resume content",
                   },
                 },
                 required: ["candidate_name", "skills", "projects", "interview_topics"],
@@ -150,19 +191,34 @@ serve(async (req) => {
 
     const data = await response.json();
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall?.function?.arguments) {
-      throw new Error("No structured output from AI");
-    }
 
-    const extracted = JSON.parse(toolCall.function.arguments);
+    let extracted: unknown;
+
+    if (toolCall?.function?.arguments) {
+      try {
+        extracted = JSON.parse(toolCall.function.arguments);
+      } catch (_e) {
+        console.warn("Failed to parse tool_call arguments directly, attempting cleanup");
+        extracted = extractJsonFromResponse(toolCall.function.arguments);
+      }
+    } else {
+      // Fallback: try to extract from message content
+      const content = data.choices?.[0]?.message?.content;
+      if (content) {
+        extracted = extractJsonFromResponse(content);
+      } else {
+        throw new Error("No structured output from AI");
+      }
+    }
 
     // Cache the result if user is authenticated
     if (user) {
+      const ext = extracted as { interview_topics?: unknown[] };
       await supabase.from("resume_topics").insert({
         user_id: user.id,
         resume_hash: resumeHash,
         extracted_data: extracted,
-        generated_topics: extracted.interview_topics,
+        generated_topics: ext.interview_topics || [],
       });
     }
 
