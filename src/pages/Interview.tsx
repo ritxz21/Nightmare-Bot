@@ -76,13 +76,16 @@ const Interview = () => {
     if (!user) return;
 
     // Check for existing in-progress session for this topic to prevent duplicates
-    const { data: existing } = await supabase
+    const { data: existingList } = await supabase
       .from("interview_sessions")
       .select("id")
       .eq("user_id", user.id)
       .eq("topic_id", topic.id)
       .eq("status", "in_progress")
-      .maybeSingle();
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const existing = existingList?.[0];
 
     if (existing) {
       sessionIdRef.current = existing.id;
