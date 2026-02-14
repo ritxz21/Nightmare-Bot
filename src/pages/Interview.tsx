@@ -1,10 +1,12 @@
-import { useState, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useConversation } from "@elevenlabs/react";
 import { TOPICS } from "@/lib/topics";
 import { VoiceOrb } from "@/components/VoiceOrb";
 import { TranscriptPanel, TranscriptEntry } from "@/components/TranscriptPanel";
 import { BluffMeter } from "@/components/BluffMeter";
 import { KnowledgeMap, ConceptNode } from "@/components/KnowledgeMap";
+import { supabase } from "@/integrations/supabase/client";
 
 const Interview = () => {
   const { topicId } = useParams<{ topicId: string }>();
@@ -15,14 +17,88 @@ const Interview = () => {
   const [voiceStatus, setVoiceStatus] = useState<"idle" | "connecting" | "listening" | "speaking">("idle");
   const [bluffScore, setBluffScore] = useState(0);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [concepts, setConcepts] = useState<ConceptNode[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const transcriptRef = useRef<TranscriptEntry[]>([]);
 
-  const concepts: ConceptNode[] = useMemo(() => {
-    if (!topic) return [];
-    return topic.coreConcepts.map((name) => ({
-      name,
-      status: "missing" as const,
-    }));
+  // Initialize concepts from topic
+  useEffect(() => {
+    if (topic) {
+      setConcepts(
+        topic.coreConcepts.map((name) => ({
+          name,
+          status: "missing" as const,
+        }))
+      );
+    }
   }, [topic]);
+
+  const conversation = useConversation({
+    onConnect: () => {
+      console.log("Connected to ElevenLabs agent");
+      setVoiceStatus("listening");
+      setError(null);
+    },
+    onDisconnect: () => {
+      console.log("Disconnected from ElevenLabs agent");
+      setVoiceStatus("idle");
+    },
+    onMessage: (payload) => {
+      console.log("Message from agent:", payload);
+      const entry: TranscriptEntry = {
+        role: payload.role === "agent" ? "agent" : "user",
+        text: payload.message,
+        timestamp: new Date(),
+      };
+      if (entry.text) {
+        transcriptRef.current = [...transcriptRef.current, entry];
+        setTranscript([...transcriptRef.current]);
+      }
+    },
+    onError: (err) => {
+      console.error("ElevenLabs error:", err);
+      setError("Voice connection failed. Please try again.");
+      setVoiceStatus("idle");
+    },
+  });
+
+  // Track speaking state
+  useEffect(() => {
+    if (conversation.status === "connected") {
+      setVoiceStatus(conversation.isSpeaking ? "speaking" : "listening");
+    }
+  }, [conversation.isSpeaking, conversation.status]);
+
+  const handleStartInterview = useCallback(async () => {
+    setVoiceStatus("connecting");
+    setError(null);
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const { data, error: fnError } = await supabase.functions.invoke(
+        "elevenlabs-signed-url"
+      );
+
+      if (fnError || !data?.signed_url) {
+        throw new Error(fnError?.message || "Failed to get signed URL");
+      }
+
+      await conversation.startSession({
+        signedUrl: data.signed_url,
+      });
+    } catch (err) {
+      console.error("Failed to start interview:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to start interview"
+      );
+      setVoiceStatus("idle");
+    }
+  }, [conversation]);
+
+  const handleEndInterview = useCallback(async () => {
+    await conversation.endSession();
+    setVoiceStatus("idle");
+  }, [conversation]);
 
   if (!topic) {
     return (
@@ -40,26 +116,6 @@ const Interview = () => {
     );
   }
 
-  const handleStartInterview = () => {
-    setVoiceStatus("connecting");
-    // TODO: Connect to ElevenLabs voice agent
-    setTimeout(() => {
-      setVoiceStatus("listening");
-      setTranscript([
-        {
-          role: "agent",
-          text: `Let's test your understanding of ${topic.title}. Start by explaining the core concept in your own words.`,
-          timestamp: new Date(),
-        },
-      ]);
-    }, 1500);
-  };
-
-  const handleEndInterview = () => {
-    setVoiceStatus("idle");
-    // TODO: Navigate to results
-  };
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
@@ -67,7 +123,12 @@ const Interview = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate("/")}
+              onClick={() => {
+                if (voiceStatus !== "idle") {
+                  handleEndInterview();
+                }
+                navigate("/");
+              }}
               className="text-muted-foreground hover:text-foreground transition-colors text-sm font-mono"
             >
               ←
@@ -98,12 +159,19 @@ const Interview = () => {
           <VoiceOrb status={voiceStatus} />
 
           {voiceStatus === "idle" && (
-            <button
-              onClick={handleStartInterview}
-              className="mt-12 px-8 py-3 rounded-lg font-semibold text-sm bg-primary text-primary-foreground hover:bg-primary/90 card-glow-hover transition-all duration-300"
-            >
-              Begin Interview
-            </button>
+            <div className="flex flex-col items-center gap-4 mt-12">
+              <button
+                onClick={handleStartInterview}
+                className="px-8 py-3 rounded-lg font-semibold text-sm bg-primary text-primary-foreground hover:bg-primary/90 card-glow-hover transition-all duration-300"
+              >
+                Begin Interview
+              </button>
+              {error && (
+                <p className="text-xs text-destructive font-mono max-w-sm text-center">
+                  {error}
+                </p>
+              )}
+            </div>
           )}
 
           {/* Bluff Meter - below orb when active */}
