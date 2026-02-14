@@ -12,6 +12,7 @@ const Invites = () => {
   const { user, loading: authLoading } = useAuth();
   const [invites, setInvites] = useState<InterviewInvite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [claiming, setClaiming] = useState<string | null>(null);
 
   // Handle invite token claim from URL
   useEffect(() => {
@@ -23,38 +24,49 @@ const Invites = () => {
 
   const claimInvite = async (token: string) => {
     if (!user) return;
-    const { data, error } = await supabase.rpc("claim_invite", {
-      _token: token,
-      _user_id: user.id,
-    });
-    if (error) {
-      console.error("Failed to claim invite:", error);
-      toast.error("Invalid or expired invite link");
-    } else if (data) {
-      toast.success("Invite accepted!");
-      loadInvites();
+    try {
+      const { data, error } = await supabase.rpc("claim_invite", {
+        _token: token,
+        _user_id: user.id,
+      });
+      if (error) {
+        console.error("Failed to claim invite:", error);
+        toast.error("Invalid or expired invite link");
+      } else if (data) {
+        toast.success("Invite accepted!");
+        loadInvites();
+      }
+    } catch (err) {
+      console.error("Claim invite error:", err);
+      toast.error("Failed to claim invite");
     }
   };
 
   const loadInvites = async () => {
     if (!user) { setLoading(false); return; }
-    // Fetch invites assigned to this user OR sent to their email
-    const { data: userData } = await supabase.auth.getUser();
-    const email = userData?.user?.email;
-    
-    let query = supabase
-      .from("interview_invites")
-      .select("*, job_roles(*)")
-      .order("sent_at", { ascending: false });
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const email = userData?.user?.email;
+      
+      let query = supabase
+        .from("interview_invites")
+        .select("*, job_roles(*)")
+        .order("sent_at", { ascending: false });
 
-    if (email) {
-      query = query.or(`interviewee_id.eq.${user.id},invite_email.eq.${email}`);
-    } else {
-      query = query.eq("interviewee_id", user.id);
+      if (email) {
+        query = query.or(`interviewee_id.eq.${user.id},invite_email.eq.${email}`);
+      } else {
+        query = query.eq("interviewee_id", user.id);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error("Failed to load invites:", error);
+      }
+      if (data) setInvites(data as unknown as InterviewInvite[]);
+    } catch (err) {
+      console.error("Load invites error:", err);
     }
-
-    const { data, error } = await query;
-    if (!error && data) setInvites(data as unknown as InterviewInvite[]);
     setLoading(false);
   };
 
@@ -70,19 +82,8 @@ const Invites = () => {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "interview_invites" },
-        (payload) => {
-          const row = payload.new as any;
-          if (payload.eventType === "INSERT" && row.interviewee_id === user.id) {
-            setInvites((prev) => {
-              if (prev.some((i) => i.id === row.id)) return prev;
-              // Reload to get joined job_roles data
-              loadInvites();
-              return prev;
-            });
-            toast.info("New interview invite received!");
-          } else if (payload.eventType === "UPDATE" && row.interviewee_id === user.id) {
-            loadInvites();
-          }
+        () => {
+          loadInvites();
         }
       )
       .subscribe();
@@ -90,29 +91,44 @@ const Invites = () => {
   }, [user]);
 
   const claimAndStart = async (invite: InterviewInvite) => {
-    // If not yet claimed, claim it first
-    if (!invite.interviewee_id && user) {
-      const { error } = await supabase
-        .from("interview_invites")
-        .update({ interviewee_id: user.id, status: "accepted" })
-        .eq("id", invite.id);
-      if (error) {
-        console.error("Failed to claim invite:", error);
-        toast.error("Failed to accept invite");
-        return;
+    if (!user) return;
+    setClaiming(invite.id);
+    try {
+      // If not yet claimed by this user, claim it
+      if (!invite.interviewee_id) {
+        const { error } = await supabase
+          .from("interview_invites")
+          .update({ interviewee_id: user.id, status: "accepted" })
+          .eq("id", invite.id);
+        if (error) {
+          console.error("Failed to claim invite:", error);
+          toast.error("Failed to accept invite. Please try again.");
+          setClaiming(null);
+          return;
+        }
+        toast.success("Invite accepted!");
       }
-      invite.interviewee_id = user.id;
-      invite.status = "accepted";
+      // Navigate to interview
+      startCompanyInterview(invite);
+    } catch (err) {
+      console.error("Claim and start error:", err);
+      toast.error("An unexpected error occurred. Please try again.");
     }
-    startCompanyInterview(invite);
+    setClaiming(null);
   };
 
   const startCompanyInterview = (invite: InterviewInvite) => {
-    if (!invite.job_roles) return;
+    if (!invite.job_roles) {
+      toast.error("Job role data not available. Please refresh and try again.");
+      return;
+    }
     const jr = invite.job_roles;
-    const topics = (jr.custom_topics || []);
+    const topics = jr.custom_topics || [];
     const firstTopic = topics[0];
-    if (!firstTopic) { toast.error("No topics configured for this role"); return; }
+    if (!firstTopic) {
+      toast.error("No topics configured for this role");
+      return;
+    }
 
     const encoded = encodeURIComponent(JSON.stringify({
       id: `company-${jr.id}`,
@@ -157,40 +173,62 @@ const Invites = () => {
               <p className="text-xs text-muted-foreground/50 mt-2">Companies will send you invites here.</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {invites.map((invite) => (
-                <div key={invite.id} className="bg-card border border-border/50 rounded-lg p-5 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">
-                      {invite.job_roles?.company_name} — {invite.job_roles?.job_title}
-                    </h3>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-[10px] font-mono text-muted-foreground">{formatDate(invite.sent_at)}</span>
-                      {invite.deadline && (
-                        <span className="text-[10px] font-mono text-destructive">Due: {formatDate(invite.deadline)}</span>
-                      )}
+            <div className="space-y-4">
+              {invites.map((invite) => {
+                const jr = invite.job_roles;
+                const topics = jr?.custom_topics || [];
+                return (
+                  <div key={invite.id} className="bg-card border border-border/50 rounded-lg p-5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold text-foreground">
+                          {jr?.company_name ?? "Unknown Company"} — {jr?.job_title ?? "Unknown Role"}
+                        </h3>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[10px] font-mono text-muted-foreground">{formatDate(invite.sent_at)}</span>
+                          {invite.deadline && (
+                            <span className="text-[10px] font-mono text-destructive">Due: {formatDate(invite.deadline)}</span>
+                          )}
+                          {jr?.difficulty_level && (
+                            <span className="text-[10px] font-mono text-muted-foreground bg-secondary px-2 py-0.5 rounded">
+                              {jr.difficulty_level}
+                            </span>
+                          )}
+                        </div>
+                        {/* Show topics */}
+                        {topics.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {topics.map((t: { title: string; core_concepts: string[] }, idx: number) => (
+                              <span key={idx} className="text-[10px] font-mono px-2 py-0.5 rounded bg-accent/50 text-accent-foreground">
+                                {t.title}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 ml-4">
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                          invite.status === "pending" ? "bg-concept-yellow/10 text-concept-yellow" :
+                          invite.status === "accepted" ? "bg-primary/10 text-primary" :
+                          invite.status === "completed" ? "bg-concept-green/10 text-concept-green" :
+                          "bg-secondary text-muted-foreground"
+                        }`}>
+                          {invite.status}
+                        </span>
+                        {(invite.status === "accepted" || invite.status === "pending") && (
+                          <button
+                            onClick={() => claimAndStart(invite)}
+                            disabled={claiming === invite.id}
+                            className="px-4 py-2 rounded-md text-xs font-mono bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          >
+                            {claiming === invite.id ? "Starting..." : invite.status === "pending" ? "Accept & Start" : "Start Interview"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
-                      invite.status === "pending" ? "bg-concept-yellow/10 text-concept-yellow" :
-                      invite.status === "accepted" ? "bg-primary/10 text-primary" :
-                      invite.status === "completed" ? "bg-concept-green/10 text-concept-green" :
-                      "bg-secondary text-muted-foreground"
-                    }`}>
-                      {invite.status}
-                    </span>
-                    {(invite.status === "accepted" || invite.status === "pending") && (
-                      <button
-                        onClick={() => claimAndStart(invite)}
-                        className="px-4 py-2 rounded-md text-xs font-mono bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                      >
-                        {invite.status === "pending" ? "Accept & Start" : "Start Interview"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
