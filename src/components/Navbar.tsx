@@ -69,9 +69,11 @@ const Navbar = () => {
               <button onClick={() => navigate("/dashboard")} className={linkClass("/dashboard")}>
                 Dashboard
               </button>
-              <button onClick={() => navigate("/history")} className={linkClass("/history")}>
-                History
-              </button>
+              {role !== "interviewer" && (
+                <button onClick={() => navigate("/history")} className={linkClass("/history")}>
+                  History
+                </button>
+              )}
             </>
           )}
 
