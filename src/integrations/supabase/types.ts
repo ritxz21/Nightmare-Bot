@@ -213,6 +213,42 @@ export type Database = {
         }
         Relationships: []
       }
+      leaderboard_entries: {
+        Row: {
+          avg_bluff_score: number
+          best_bluff_score: number
+          created_at: string
+          id: string
+          player_name: string
+          sessions_count: number
+          topic_id: string
+          topic_title: string
+          updated_at: string
+        }
+        Insert: {
+          avg_bluff_score?: number
+          best_bluff_score?: number
+          created_at?: string
+          id?: string
+          player_name: string
+          sessions_count?: number
+          topic_id: string
+          topic_title: string
+          updated_at?: string
+        }
+        Update: {
+          avg_bluff_score?: number
+          best_bluff_score?: number
+          created_at?: string
+          id?: string
+          player_name?: string
+          sessions_count?: number
+          topic_id?: string
+          topic_title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       resume_topics: {
         Row: {
           created_at: string
