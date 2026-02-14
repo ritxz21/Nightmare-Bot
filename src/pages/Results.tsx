@@ -113,7 +113,7 @@ const Results = () => {
           </div>
 
           {/* Stats Row */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             <div className="bg-card border border-border/50 rounded-lg p-5 text-center">
               <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Concepts Clear</p>
               <p className="text-3xl font-bold font-mono text-concept-green">{clearCount}</p>
@@ -128,6 +128,14 @@ const Results = () => {
               <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Missing</p>
               <p className="text-3xl font-bold font-mono text-primary">{missingCount}</p>
               <p className="text-xs text-muted-foreground mt-1">not covered</p>
+            </div>
+            <div className="bg-card border border-border/50 rounded-lg p-5 text-center">
+              <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">Duration</p>
+              <p className="text-3xl font-bold font-mono text-foreground">{(() => {
+                const mins = Math.round((new Date(session.updated_at).getTime() - new Date(session.created_at).getTime()) / 60000);
+                return mins < 1 ? "<1m" : `${mins}m`;
+              })()}</p>
+              <p className="text-xs text-muted-foreground mt-1">interview time</p>
             </div>
           </div>
 
@@ -177,6 +185,18 @@ const Results = () => {
               )}
             </div>
           </div>
+
+          {/* Video Recording */}
+          {session.video_url && (
+            <div className="bg-card border border-border/50 rounded-lg p-5">
+              <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">Interview Recording</h3>
+              <video
+                src={session.video_url}
+                controls
+                className="w-full max-w-3xl mx-auto rounded-lg border border-border/50 bg-black"
+              />
+            </div>
+          )}
 
           {/* Knowledge Map */}
           <div className="bg-card border border-border/50 rounded-lg p-5">
