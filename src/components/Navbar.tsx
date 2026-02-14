@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -27,6 +28,7 @@ const Navbar = () => {
           </span>
         </button>
         <div className="flex items-center gap-4">
+          <ThemeToggle />
           {/* Always visible */}
           <button onClick={() => navigate("/")} className={linkClass("/")}>
             Topics
