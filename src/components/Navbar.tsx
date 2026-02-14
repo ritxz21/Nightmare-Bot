@@ -24,7 +24,7 @@ const Navbar = () => {
         <button onClick={() => navigate("/")} className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-primary animate-pulse-glow" />
           <span className="text-sm font-mono text-muted-foreground tracking-wider uppercase">
-            DeepFake Interviewer
+            Nightmare Bot
           </span>
         </button>
         <div className="flex items-center gap-4">
