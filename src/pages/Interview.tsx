@@ -166,7 +166,13 @@ const Interview = () => {
 
   const conversation = useConversation({
     onConnect: () => { setVoiceStatus("listening"); setError(null); },
-    onDisconnect: () => { setVoiceStatus("idle"); },
+    onDisconnect: () => {
+      setVoiceStatus("idle");
+      // If session is still in_progress when disconnected, mark it as disconnected
+      if (sessionIdRef.current) {
+        persistSession({ status: "disconnected" });
+      }
+    },
     onMessage: (payload) => {
       const entry: TranscriptEntry = { role: payload.role === "agent" ? "agent" : "user", text: payload.message, timestamp: new Date() };
       if (entry.text) {
@@ -184,6 +190,18 @@ const Interview = () => {
   useEffect(() => {
     if (conversation.status === "connected") setVoiceStatus(conversation.isSpeaking ? "speaking" : "listening");
   }, [conversation.isSpeaking, conversation.status]);
+
+  // Mark session as disconnected if user closes/navigates away
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (sessionIdRef.current) {
+        // Fire-and-forget update via supabase client
+        supabase.from("interview_sessions").update({ status: "disconnected" }).eq("id", sessionIdRef.current).then();
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   // Video recording
   const startRecording = async () => {
