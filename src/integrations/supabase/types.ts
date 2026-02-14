@@ -14,13 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      interview_sessions: {
+        Row: {
+          bluff_history: Json
+          concept_coverage: Json
+          created_at: string
+          final_bluff_score: number
+          id: string
+          status: string
+          topic_id: string
+          topic_title: string
+          transcript: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bluff_history?: Json
+          concept_coverage?: Json
+          created_at?: string
+          final_bluff_score?: number
+          id?: string
+          status?: string
+          topic_id: string
+          topic_title: string
+          transcript?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bluff_history?: Json
+          concept_coverage?: Json
+          created_at?: string
+          final_bluff_score?: number
+          id?: string
+          status?: string
+          topic_id?: string
+          topic_title?: string
+          transcript?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_session_owner: { Args: { session_id: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

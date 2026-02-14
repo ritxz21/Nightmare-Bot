@@ -36,12 +36,43 @@ const Interview = () => {
   const pendingUserTextRef = useRef("");
   const analyzeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const conversationRef = useRef<ReturnType<typeof useConversation> | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const bluffHistoryRef = useRef<{ timestamp: string; score: number }[]>([]);
 
   useEffect(() => {
     if (topic) {
       setConcepts(topic.coreConcepts.map((name) => ({ name, status: "missing" as const })));
     }
   }, [topic]);
+
+  // Create a new session in the database
+  const createSession = useCallback(async () => {
+    if (!topic) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return; // Skip persistence for unauthenticated users
+    const { data, error: insertError } = await supabase
+      .from("interview_sessions")
+      .insert({
+        user_id: user.id,
+        topic_id: topic.id,
+        topic_title: topic.title,
+        concept_coverage: topic.coreConcepts.map((name) => ({ name, status: "missing" })),
+      })
+      .select("id")
+      .single();
+    if (insertError) { console.error("Failed to create session:", insertError); return; }
+    sessionIdRef.current = data.id;
+  }, [topic]);
+
+  // Persist session state to the database
+  const persistSession = useCallback(async (updates: Record<string, unknown>) => {
+    if (!sessionIdRef.current) return;
+    const { error: updateError } = await supabase
+      .from("interview_sessions")
+      .update(updates)
+      .eq("id", sessionIdRef.current);
+    if (updateError) console.error("Failed to persist session:", updateError);
+  }, []);
 
   const analyzeUserResponse = useCallback(async (userText: string) => {
     if (!topic || !userText.trim()) return;
@@ -65,17 +96,32 @@ const Interview = () => {
       lastAnalysisRef.current = analysis;
       setBluffScore(analysis.bluff_probability);
 
-      setConcepts((prev) =>
-        prev.map((concept) => {
+      // Track bluff history
+      bluffHistoryRef.current = [
+        ...bluffHistoryRef.current,
+        { timestamp: new Date().toISOString(), score: analysis.bluff_probability },
+      ];
+
+      setConcepts((prev) => {
+        const updated: ConceptNode[] = prev.map((concept) => {
           if (analysis.concepts_mentioned_clearly.some((c) => c.toLowerCase() === concept.name.toLowerCase())) {
-            return { ...concept, status: "clear" as const };
+            return { name: concept.name, status: "clear" as const };
           }
           if (analysis.concepts_mentioned_shallowly.some((c) => c.toLowerCase() === concept.name.toLowerCase())) {
-            return { ...concept, status: concept.status === "clear" ? "clear" : "shallow" as const };
+            return { name: concept.name, status: concept.status === "clear" ? "clear" as const : "shallow" as const };
           }
           return concept;
-        })
-      );
+        });
+
+        // Persist updated state
+        persistSession({
+          bluff_history: bluffHistoryRef.current,
+          concept_coverage: updated,
+          final_bluff_score: analysis.bluff_probability,
+        });
+
+        return updated;
+      });
 
       if (analysis.follow_up_question && conversationRef.current?.status === "connected") {
         conversationRef.current.sendContextualUpdate(
@@ -87,7 +133,7 @@ const Interview = () => {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [topic]);
+  }, [topic, persistSession]);
 
   const scheduleAnalysis = useCallback((text: string) => {
     pendingUserTextRef.current += " " + text;
@@ -113,6 +159,8 @@ const Interview = () => {
       if (entry.text) {
         transcriptRef.current = [...transcriptRef.current, entry];
         setTranscript([...transcriptRef.current]);
+        // Persist transcript
+        persistSession({ transcript: transcriptRef.current.map((e) => ({ role: e.role, text: e.text, timestamp: e.timestamp.toISOString() })) });
         if (payload.role === "user") scheduleAnalysis(entry.text);
       }
     },
@@ -137,6 +185,7 @@ const Interview = () => {
     setError(null);
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
+      await createSession();
       const { data, error: fnError } = await supabase.functions.invoke("elevenlabs-signed-url");
       if (fnError || !data?.signed_url) throw new Error(fnError?.message || "Failed to get signed URL");
       await conversation.startSession({ signedUrl: data.signed_url });
@@ -145,12 +194,14 @@ const Interview = () => {
       setError(err instanceof Error ? err.message : "Failed to start interview");
       setVoiceStatus("idle");
     }
-  }, [conversation]);
+  }, [conversation, createSession]);
 
   const handleEndInterview = useCallback(async () => {
     await conversation.endSession();
+    await persistSession({ status: "completed" });
+    sessionIdRef.current = null;
     setVoiceStatus("idle");
-  }, [conversation]);
+  }, [conversation, persistSession]);
 
   if (!topic) {
     return (
