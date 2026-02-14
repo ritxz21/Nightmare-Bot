@@ -140,9 +140,6 @@ const InterviewerDashboard = () => {
             {activeSessions.length === 0 ? (
               <div className="bg-card border border-border/50 rounded-lg p-8 text-center">
                 <p className="text-sm text-muted-foreground font-mono">No active interviews right now.</p>
-                <button onClick={() => navigate("/")} className="mt-3 text-xs font-mono text-primary hover:underline underline-offset-4">
-                  Start a new interview →
-                </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
