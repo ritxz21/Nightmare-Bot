@@ -17,6 +17,25 @@ import {
   PolarAngleAxis,
   Radar,
 } from "recharts";
+// Video player that generates signed URLs for private bucket
+const ResultsVideoPlayer = ({ videoPath }: { videoPath: string }) => {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const load = async () => {
+      if (videoPath.startsWith("http")) { setSignedUrl(videoPath); return; }
+      const { data, error } = await supabase.storage.from("interview-videos").createSignedUrl(videoPath, 3600);
+      if (!error && data?.signedUrl) setSignedUrl(data.signedUrl);
+    };
+    load();
+  }, [videoPath]);
+  if (!signedUrl) return <p className="text-[10px] font-mono text-muted-foreground">Loading video...</p>;
+  return (
+    <div className="bg-card border border-border/50 rounded-lg p-5">
+      <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">Interview Recording</h3>
+      <video src={signedUrl} controls className="w-full max-w-3xl mx-auto rounded-lg border border-border/50 bg-black" />
+    </div>
+  );
+};
 
 const Results = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -187,16 +206,7 @@ const Results = () => {
           </div>
 
           {/* Video Recording */}
-          {session.video_url && (
-            <div className="bg-card border border-border/50 rounded-lg p-5">
-              <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">Interview Recording</h3>
-              <video
-                src={session.video_url}
-                controls
-                className="w-full max-w-3xl mx-auto rounded-lg border border-border/50 bg-black"
-              />
-            </div>
-          )}
+          {session.video_url && <ResultsVideoPlayer videoPath={session.video_url} />}
 
           {/* Knowledge Map */}
           <div className="bg-card border border-border/50 rounded-lg p-5">

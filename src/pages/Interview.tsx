@@ -197,8 +197,8 @@ const Interview = () => {
       const path = `${user.id}/${sessionIdRef.current}.webm`;
       const { error: uploadErr } = await supabase.storage.from("interview-videos").upload(path, blob);
       if (!uploadErr) {
-        const { data: urlData } = supabase.storage.from("interview-videos").getPublicUrl(path);
-        await persistSession({ video_url: urlData.publicUrl });
+        // Store the storage path (not public URL) since bucket is private
+        await persistSession({ video_url: path });
       }
     }
   };
@@ -211,7 +211,33 @@ const Interview = () => {
       await createSession();
       const { data, error: fnError } = await supabase.functions.invoke("elevenlabs-signed-url");
       if (fnError || !data?.signed_url) throw new Error(fnError?.message || "Failed to get signed URL");
-      await conversation.startSession({ signedUrl: data.signed_url });
+
+      // Build personalized overrides based on job role and topic
+      let overrides: Record<string, any> | undefined;
+      if (jobRoleId) {
+        const { data: roleData } = await supabase.from("job_roles").select("*").eq("id", jobRoleId).single();
+        const roleName = roleData ? `${roleData.job_title} at ${roleData.company_name}` : "";
+        const firstTopic = topic?.coreConcepts?.[0] || topic?.title || "";
+        overrides = {
+          agent: {
+            prompt: {
+              prompt: `You are conducting a technical interview for the role of "${roleName}". The candidate is being assessed on "${topic?.title}". Core concepts to probe: ${topic?.coreConcepts?.join(", ")}. Start by asking about "${firstTopic}" and progressively go deeper. Be professional but slightly adversarial — probe for genuine understanding vs surface-level answers.`,
+            },
+            firstMessage: `Hello! I'll be your interviewer today for the ${roleName ? roleName + " position" : "interview"}. Let's start with ${topic?.title} — can you walk me through your understanding of ${firstTopic}?`,
+          },
+        };
+      } else {
+        overrides = {
+          agent: {
+            prompt: {
+              prompt: `You are conducting a technical interview on "${topic?.title}". Core concepts to probe: ${topic?.coreConcepts?.join(", ")}. Start with "${topic?.coreConcepts?.[0] || topic?.title}" and progressively go deeper. Be professional but slightly adversarial.`,
+            },
+            firstMessage: `Hi there! Today we'll dive into ${topic?.title}. Let's start — can you tell me about ${topic?.coreConcepts?.[0] || topic?.title}?`,
+          },
+        };
+      }
+
+      await conversation.startSession({ signedUrl: data.signed_url, overrides });
       // Auto-start video recording
       startRecording();
     } catch (err) {

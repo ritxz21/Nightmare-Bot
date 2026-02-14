@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,6 +19,33 @@ import {
   Tooltip,
   ReferenceLine,
 } from "recharts";
+
+// Small component to load signed URLs for private bucket videos
+const VideoPlayer = ({ videoPath }: { videoPath: string }) => {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const load = async () => {
+      // If it's already a full URL (legacy), try it directly
+      if (videoPath.startsWith("http")) {
+        setSignedUrl(videoPath);
+        return;
+      }
+      const { data, error } = await supabase.storage
+        .from("interview-videos")
+        .createSignedUrl(videoPath, 3600); // 1 hour
+      if (!error && data?.signedUrl) setSignedUrl(data.signedUrl);
+    };
+    load();
+  }, [videoPath]);
+
+  if (!signedUrl) return <p className="text-[10px] font-mono text-muted-foreground">Loading video...</p>;
+  return (
+    <div>
+      <p className="text-[10px] font-mono text-muted-foreground uppercase mb-2">Interview Recording</p>
+      <video src={signedUrl} controls className="w-full max-w-2xl rounded-lg border border-border/50 bg-black" />
+    </div>
+  );
+};
 
 const JobRoleDetail = () => {
   const { jobRoleId } = useParams<{ jobRoleId: string }>();
@@ -276,12 +303,13 @@ const JobRoleDetail = () => {
                   placeholder="candidate@email.com"
                   className="flex-1 px-3 py-2 rounded-md bg-secondary border border-border text-foreground text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary"
                 />
-                <div className="relative">
-                  <label className="text-[10px] font-mono text-muted-foreground uppercase absolute -top-4 left-0">Deadline</label>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-mono text-muted-foreground uppercase">Deadline</label>
                   <input
                     type="date"
                     value={inviteDeadline}
                     onChange={(e) => setInviteDeadline(e.target.value)}
+                    min={new Date().toISOString().split("T")[0]}
                     className="px-3 py-2 rounded-md bg-secondary border border-border text-foreground text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
@@ -444,17 +472,7 @@ const JobRoleDetail = () => {
                             </p>
                           </div>
 
-                          {/* Video Player */}
-                          {s.video_url && (
-                            <div>
-                              <p className="text-[10px] font-mono text-muted-foreground uppercase mb-2">Interview Recording</p>
-                              <video
-                                src={s.video_url}
-                                controls
-                                className="w-full max-w-2xl rounded-lg border border-border/50 bg-black"
-                              />
-                            </div>
-                          )}
+                          {s.video_url && <VideoPlayer videoPath={s.video_url} />}
 
                           {/* Transcript Preview */}
                           {(s.transcript || []).length > 0 && (
