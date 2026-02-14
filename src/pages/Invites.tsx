@@ -5,6 +5,15 @@ import { useAuth } from "@/hooks/useAuth";
 import { InterviewInvite } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 
 const Invites = () => {
   const navigate = useNavigate();
@@ -13,6 +22,11 @@ const Invites = () => {
   const [invites, setInvites] = useState<InterviewInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState<string | null>(null);
+
+  // Reject confirmation state
+  const [rejectInvite, setRejectInvite] = useState<InterviewInvite | null>(null);
+  const [rejectConfirmText, setRejectConfirmText] = useState("");
+  const [rejecting, setRejecting] = useState(false);
 
   // Handle invite token claim from URL
   useEffect(() => {
@@ -94,7 +108,6 @@ const Invites = () => {
     if (!user) return;
     setClaiming(invite.id);
     try {
-      // If not yet claimed by this user, claim it
       if (!invite.interviewee_id) {
         const { error } = await supabase
           .from("interview_invites")
@@ -108,13 +121,41 @@ const Invites = () => {
         }
         toast.success("Invite accepted!");
       }
-      // Navigate to interview
       startCompanyInterview(invite);
     } catch (err) {
       console.error("Claim and start error:", err);
       toast.error("An unexpected error occurred. Please try again.");
     }
     setClaiming(null);
+  };
+
+  const handleReject = async () => {
+    if (!rejectInvite || !user) return;
+    const companyName = rejectInvite.job_roles?.company_name || "";
+    if (rejectConfirmText.trim().toLowerCase() !== companyName.trim().toLowerCase()) {
+      toast.error("Company name doesn't match. Please type it exactly.");
+      return;
+    }
+    setRejecting(true);
+    try {
+      const { error } = await supabase
+        .from("interview_invites")
+        .update({ status: "rejected" })
+        .eq("id", rejectInvite.id);
+      if (error) {
+        console.error("Failed to reject invite:", error);
+        toast.error("Failed to reject invite");
+      } else {
+        toast.success("Invite rejected");
+        loadInvites();
+      }
+    } catch (err) {
+      console.error("Reject error:", err);
+      toast.error("Failed to reject invite");
+    }
+    setRejecting(false);
+    setRejectInvite(null);
+    setRejectConfirmText("");
   };
 
   const startCompanyInterview = (invite: InterviewInvite) => {
@@ -195,7 +236,6 @@ const Invites = () => {
                             </span>
                           )}
                         </div>
-                        {/* Show topics */}
                         {topics.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-2">
                             {topics.map((t: { title: string; core_concepts: string[] }, idx: number) => (
@@ -211,18 +251,27 @@ const Invites = () => {
                           invite.status === "pending" ? "bg-concept-yellow/10 text-concept-yellow" :
                           invite.status === "accepted" ? "bg-primary/10 text-primary" :
                           invite.status === "completed" ? "bg-concept-green/10 text-concept-green" :
+                          invite.status === "rejected" ? "bg-destructive/10 text-destructive" :
                           "bg-secondary text-muted-foreground"
                         }`}>
                           {invite.status}
                         </span>
                         {(invite.status === "accepted" || invite.status === "pending") && (
-                          <button
-                            onClick={() => claimAndStart(invite)}
-                            disabled={claiming === invite.id}
-                            className="px-4 py-2 rounded-md text-xs font-mono bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                          >
-                            {claiming === invite.id ? "Starting..." : invite.status === "pending" ? "Accept & Start" : "Start Interview"}
-                          </button>
+                          <>
+                            <button
+                              onClick={() => { setRejectInvite(invite); setRejectConfirmText(""); }}
+                              className="px-3 py-2 rounded-md text-xs font-mono bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 transition-colors"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              onClick={() => claimAndStart(invite)}
+                              disabled={claiming === invite.id}
+                              className="px-4 py-2 rounded-md text-xs font-mono bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                            >
+                              {claiming === invite.id ? "Starting..." : invite.status === "pending" ? "Accept & Start" : "Start Interview"}
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -233,6 +282,42 @@ const Invites = () => {
           )}
         </div>
       </main>
+
+      {/* Reject Confirmation Dialog */}
+      <AlertDialog open={!!rejectInvite} onOpenChange={(open) => { if (!open) { setRejectInvite(null); setRejectConfirmText(""); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject Interview Invite</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Are you sure you want to reject the invite from{" "}
+                  <strong className="text-foreground">{rejectInvite?.job_roles?.company_name}</strong> for the{" "}
+                  <strong className="text-foreground">{rejectInvite?.job_roles?.job_title}</strong> role?
+                </p>
+                <p className="text-xs">This action cannot be undone. To confirm, type the company name below:</p>
+                <input
+                  type="text"
+                  value={rejectConfirmText}
+                  onChange={(e) => setRejectConfirmText(e.target.value)}
+                  placeholder={rejectInvite?.job_roles?.company_name || "Company name"}
+                  className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-foreground text-sm font-mono focus:outline-none focus:ring-1 focus:ring-destructive"
+                />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <button
+              onClick={handleReject}
+              disabled={rejecting || rejectConfirmText.trim().toLowerCase() !== (rejectInvite?.job_roles?.company_name || "").trim().toLowerCase()}
+              className="px-4 py-2 rounded-md text-sm font-semibold bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+            >
+              {rejecting ? "Rejecting..." : "Reject Invite"}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
