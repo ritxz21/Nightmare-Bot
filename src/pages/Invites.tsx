@@ -38,11 +38,22 @@ const Invites = () => {
 
   const loadInvites = async () => {
     if (!user) { setLoading(false); return; }
-    const { data, error } = await supabase
+    // Fetch invites assigned to this user OR sent to their email
+    const { data: userData } = await supabase.auth.getUser();
+    const email = userData?.user?.email;
+    
+    let query = supabase
       .from("interview_invites")
       .select("*, job_roles(*)")
-      .eq("interviewee_id", user.id)
       .order("sent_at", { ascending: false });
+
+    if (email) {
+      query = query.or(`interviewee_id.eq.${user.id},invite_email.eq.${email}`);
+    } else {
+      query = query.eq("interviewee_id", user.id);
+    }
+
+    const { data, error } = await query;
     if (!error && data) setInvites(data as unknown as InterviewInvite[]);
     setLoading(false);
   };
@@ -77,6 +88,24 @@ const Invites = () => {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user]);
+
+  const claimAndStart = async (invite: InterviewInvite) => {
+    // If not yet claimed, claim it first
+    if (!invite.interviewee_id && user) {
+      const { error } = await supabase
+        .from("interview_invites")
+        .update({ interviewee_id: user.id, status: "accepted" })
+        .eq("id", invite.id);
+      if (error) {
+        console.error("Failed to claim invite:", error);
+        toast.error("Failed to accept invite");
+        return;
+      }
+      invite.interviewee_id = user.id;
+      invite.status = "accepted";
+    }
+    startCompanyInterview(invite);
+  };
 
   const startCompanyInterview = (invite: InterviewInvite) => {
     if (!invite.job_roles) return;
@@ -153,10 +182,10 @@ const Invites = () => {
                     </span>
                     {(invite.status === "accepted" || invite.status === "pending") && (
                       <button
-                        onClick={() => startCompanyInterview(invite)}
+                        onClick={() => claimAndStart(invite)}
                         className="px-4 py-2 rounded-md text-xs font-mono bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                       >
-                        Start Interview
+                        {invite.status === "pending" ? "Accept & Start" : "Start Interview"}
                       </button>
                     )}
                   </div>

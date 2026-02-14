@@ -6,6 +6,7 @@ import { JobRole } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import { toast } from "sonner";
 import { DifficultyLevel, DIFFICULTIES, DEFAULT_DIFFICULTY } from "@/lib/difficulty";
+import { Trash2 } from "lucide-react";
 
 const CompanyDashboard = () => {
   const navigate = useNavigate();
@@ -75,6 +76,18 @@ const CompanyDashboard = () => {
       loadRoles();
     }
     setCreating(false);
+  };
+
+  const deleteJobRole = async (id: string) => {
+    if (!confirm("Delete this job role? This will also remove all associated invites and sessions.")) return;
+    const { error } = await supabase.from("job_roles").delete().eq("id", id);
+    if (error) {
+      console.error(error);
+      toast.error("Failed to delete job role");
+    } else {
+      toast.success("Job role deleted");
+      setJobRoles((prev) => prev.filter((jr) => jr.id !== id));
+    }
   };
 
   const extractTopicsFromJd = async () => {
@@ -237,28 +250,42 @@ const CompanyDashboard = () => {
               {jobRoles.map((jr) => {
                 const diffConfig = DIFFICULTIES.find((d) => d.id === jr.difficulty_level);
                 return (
-                  <button
+                  <div
                     key={jr.id}
-                    onClick={() => navigate(`/company/${jr.id}`)}
-                    className="bg-card border border-border/50 rounded-lg p-5 text-left hover:border-primary/40 transition-all"
+                    className="bg-card border border-border/50 rounded-lg p-5 text-left hover:border-primary/40 transition-all relative group"
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-semibold text-foreground">{jr.job_title}</h3>
-                      {diffConfig && (
-                        <span className="text-xs font-mono text-muted-foreground">{diffConfig.emoji} {diffConfig.label}</span>
-                      )}
-                    </div>
-                    <p className="text-xs font-mono text-muted-foreground">{jr.company_name}</p>
-                    <div className="flex items-center gap-2 mt-3">
-                      <span className="text-[10px] font-mono text-muted-foreground/60">
-                        {(jr.custom_topics || []).length} topics
-                      </span>
-                      <span className="text-muted-foreground/30">•</span>
-                      <span className="text-[10px] font-mono text-muted-foreground/60">
-                        {new Date(jr.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </button>
+                    <button
+                      onClick={() => navigate(`/company/${jr.id}`)}
+                      className="w-full text-left"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-semibold text-foreground">{jr.job_title}</h3>
+                        {diffConfig && (
+                          <span className="text-xs font-mono text-muted-foreground">{diffConfig.emoji} {diffConfig.label}</span>
+                        )}
+                      </div>
+                      <p className="text-xs font-mono text-muted-foreground">{jr.company_name}</p>
+                      <div className="flex items-center gap-2 mt-3">
+                        <span className="text-[10px] font-mono text-muted-foreground/60">
+                          {(jr.custom_topics || []).length} topics
+                        </span>
+                        <span className="text-muted-foreground/30">•</span>
+                        <span className="text-[10px] font-mono text-muted-foreground/60">
+                          {new Date(jr.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteJobRole(jr.id);
+                      }}
+                      className="absolute top-3 right-3 p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
+                      title="Delete job role"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 );
               })}
             </div>
