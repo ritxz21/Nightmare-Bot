@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { JobRole, InterviewInvite, SessionRow } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import { toast } from "sonner";
-import { Mic, MicOff } from "lucide-react";
+import { Mic, MicOff, Clock, Video, ChevronDown, ChevronUp } from "lucide-react";
 import { useConversation } from "@elevenlabs/react";
 import {
   ResponsiveContainer,
@@ -177,6 +177,23 @@ const JobRoleDetail = () => {
     return { label: "Weak", color: "bg-primary/10 text-primary" };
   };
 
+  const getGrade = (score: number) => {
+    if (score < 20) return { label: "Expert", desc: "Deep, authentic understanding" };
+    if (score < 40) return { label: "Solid", desc: "Good grasp with minor gaps" };
+    if (score < 60) return { label: "Surface", desc: "Shallow understanding detected" };
+    if (score < 80) return { label: "Bluffer", desc: "Significant knowledge gaps" };
+    return { label: "Exposed", desc: "Mostly bluffing detected" };
+  };
+
+  const getDuration = (s: SessionRow) => {
+    const start = new Date(s.created_at).getTime();
+    const end = new Date(s.updated_at).getTime();
+    const mins = Math.round((end - start) / 60000);
+    return mins < 1 ? "<1m" : `${mins}m`;
+  };
+
+  const [expandedSession, setExpandedSession] = useState<string | null>(null);
+
   if (loading) return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-muted-foreground font-mono text-sm animate-pulse">Loading...</p></div>;
   if (!jobRole) return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-muted-foreground">Job role not found.</p></div>;
 
@@ -298,38 +315,182 @@ const JobRoleDetail = () => {
           {completedSessions.length > 0 && (
             <section>
               <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">Candidate Ranking</h2>
-              <div className="bg-card border border-border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border/50">
-                      <th className="text-left px-5 py-3 text-[10px] font-mono text-muted-foreground uppercase">Candidate</th>
-                      <th className="text-right px-5 py-3 text-[10px] font-mono text-muted-foreground uppercase">Bluff Score</th>
-                      <th className="text-right px-5 py-3 text-[10px] font-mono text-muted-foreground uppercase">Mastery</th>
-                      <th className="text-right px-5 py-3 text-[10px] font-mono text-muted-foreground uppercase">Recommendation</th>
-                      <th className="px-5 py-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {completedSessions.map((s) => {
-                      const concepts = s.concept_coverage || [];
-                      const clearPct = concepts.length > 0 ? Math.round((concepts.filter((c) => c.status === "clear").length / concepts.length) * 100) : 0;
-                      const rec = getRecommendation(s.final_bluff_score);
-                      return (
-                        <tr key={s.id} className="border-b border-border/30 last:border-0 hover:bg-secondary/20">
-                          <td className="px-5 py-3 text-foreground font-mono text-xs">{s.user_id.slice(0, 8)}…</td>
-                          <td className={`px-5 py-3 text-right font-bold font-mono ${getScoreColor(s.final_bluff_score)}`}>{Math.round(s.final_bluff_score)}%</td>
-                          <td className="px-5 py-3 text-right font-mono text-foreground">{clearPct}%</td>
-                          <td className="px-5 py-3 text-right">
-                            <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${rec.color}`}>{rec.label}</span>
-                          </td>
-                          <td className="px-5 py-3">
-                            <button onClick={() => navigate(`/results/${s.id}`)} className="text-[10px] font-mono text-primary hover:underline">View →</button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="space-y-3">
+                {completedSessions.map((s) => {
+                  const concepts = s.concept_coverage || [];
+                  const clearPct = concepts.length > 0 ? Math.round((concepts.filter((c) => c.status === "clear").length / concepts.length) * 100) : 0;
+                  const rec = getRecommendation(s.final_bluff_score);
+                  const grade = getGrade(s.final_bluff_score);
+                  const duration = getDuration(s);
+                  const isExpanded = expandedSession === s.id;
+                  const clearConcepts = concepts.filter((c) => c.status === "clear");
+                  const shallowConcepts = concepts.filter((c) => c.status === "shallow");
+                  const missingConcepts = concepts.filter((c) => c.status === "missing");
+
+                  return (
+                    <div key={s.id} className="bg-card border border-border/50 rounded-lg overflow-hidden">
+                      {/* Summary Row */}
+                      <div
+                        className="flex items-center justify-between p-5 cursor-pointer hover:bg-secondary/20 transition-colors"
+                        onClick={() => setExpandedSession(isExpanded ? null : s.id)}
+                      >
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <div className="flex-shrink-0">
+                            <p className={`text-2xl font-bold font-mono ${getScoreColor(s.final_bluff_score)}`}>{Math.round(s.final_bluff_score)}%</p>
+                            <p className={`text-[10px] font-mono ${getScoreColor(s.final_bluff_score)}`}>{grade.label}</p>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-foreground">{s.topic_title}</p>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="text-[10px] font-mono text-muted-foreground">{s.user_id.slice(0, 8)}…</span>
+                              <span className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground">
+                                <Clock className="w-3 h-3" /> {duration}
+                              </span>
+                              {s.video_url && (
+                                <span className="flex items-center gap-1 text-[10px] font-mono text-primary">
+                                  <Video className="w-3 h-3" /> Video
+                                </span>
+                              )}
+                              <span className="text-[10px] font-mono text-muted-foreground/60">
+                                {new Date(s.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <span className="text-xs font-mono text-foreground">{clearPct}% mastery</span>
+                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${rec.color}`}>{rec.label}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); navigate(`/results/${s.id}`); }}
+                            className="text-[10px] font-mono text-primary hover:underline"
+                          >
+                            Full Report →
+                          </button>
+                          {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                        </div>
+                      </div>
+
+                      {/* Expanded Details */}
+                      {isExpanded && (
+                        <div className="border-t border-border/30 p-5 space-y-4 bg-secondary/10">
+                          {/* Summary Stats */}
+                          <div className="grid grid-cols-4 gap-3">
+                            <div className="text-center">
+                              <p className="text-[10px] font-mono text-muted-foreground uppercase">Bluff Score</p>
+                              <p className={`text-xl font-bold font-mono ${getScoreColor(s.final_bluff_score)}`}>{Math.round(s.final_bluff_score)}%</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-[10px] font-mono text-muted-foreground uppercase">Duration</p>
+                              <p className="text-xl font-bold font-mono text-foreground">{duration}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-[10px] font-mono text-muted-foreground uppercase">Mastery</p>
+                              <p className="text-xl font-bold font-mono text-concept-green">{clearPct}%</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-[10px] font-mono text-muted-foreground uppercase">Grade</p>
+                              <p className={`text-xl font-bold font-mono ${getScoreColor(s.final_bluff_score)}`}>{grade.label}</p>
+                            </div>
+                          </div>
+
+                          {/* Concept Breakdown */}
+                          <div>
+                            <p className="text-[10px] font-mono text-muted-foreground uppercase mb-2">Concept Breakdown</p>
+                            <div className="space-y-1.5">
+                              {clearConcepts.length > 0 && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-[10px] font-mono text-concept-green w-16 flex-shrink-0">✓ Clear</span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {clearConcepts.map((c) => (
+                                      <span key={c.name} className="text-[10px] font-mono px-2 py-0.5 rounded bg-concept-green/10 text-concept-green">{c.name}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {shallowConcepts.length > 0 && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-[10px] font-mono text-concept-yellow w-16 flex-shrink-0">~ Shallow</span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {shallowConcepts.map((c) => (
+                                      <span key={c.name} className="text-[10px] font-mono px-2 py-0.5 rounded bg-concept-yellow/10 text-concept-yellow">{c.name}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {missingConcepts.length > 0 && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-[10px] font-mono text-primary w-16 flex-shrink-0">✗ Missing</span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {missingConcepts.map((c) => (
+                                      <span key={c.name} className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary">{c.name}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Feedback Summary */}
+                          <div className="bg-card border border-border/30 rounded-lg p-4">
+                            <p className="text-[10px] font-mono text-muted-foreground uppercase mb-2">AI Assessment Summary</p>
+                            <p className="text-sm text-foreground leading-relaxed">
+                              Candidate scored <strong className={getScoreColor(s.final_bluff_score)}>{Math.round(s.final_bluff_score)}% bluff</strong> with{" "}
+                              <strong className="text-concept-green">{clearConcepts.length}</strong> clear,{" "}
+                              <strong className="text-concept-yellow">{shallowConcepts.length}</strong> shallow, and{" "}
+                              <strong className="text-primary">{missingConcepts.length}</strong> missing concepts out of {concepts.length} total.{" "}
+                              Overall grade: <strong className={getScoreColor(s.final_bluff_score)}>{grade.label}</strong> — {grade.desc}.{" "}
+                              Interview lasted {duration}.
+                              {s.video_url && " Video recording is available below."}
+                            </p>
+                          </div>
+
+                          {/* Video Player */}
+                          {s.video_url && (
+                            <div>
+                              <p className="text-[10px] font-mono text-muted-foreground uppercase mb-2">Interview Recording</p>
+                              <video
+                                src={s.video_url}
+                                controls
+                                className="w-full max-w-2xl rounded-lg border border-border/50 bg-black"
+                              />
+                            </div>
+                          )}
+
+                          {/* Transcript Preview */}
+                          {(s.transcript || []).length > 0 && (
+                            <div>
+                              <p className="text-[10px] font-mono text-muted-foreground uppercase mb-2">
+                                Transcript ({(s.transcript || []).length} exchanges)
+                              </p>
+                              <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                                {(s.transcript || []).slice(0, 6).map((entry, i) => (
+                                  <div key={i} className={`flex flex-col gap-0.5 ${entry.role === "agent" ? "items-start" : "items-end"}`}>
+                                    <span className="text-[9px] font-mono text-muted-foreground/40 uppercase">
+                                      {entry.role === "agent" ? "Interviewer" : "Candidate"}
+                                    </span>
+                                    <div className={`max-w-[75%] px-3 py-2 rounded-lg text-xs leading-relaxed ${
+                                      entry.role === "agent" ? "bg-secondary text-secondary-foreground" : "bg-primary/10 text-foreground border border-primary/20"
+                                    }`}>
+                                      {entry.text}
+                                    </div>
+                                  </div>
+                                ))}
+                                {(s.transcript || []).length > 6 && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); navigate(`/results/${s.id}`); }}
+                                    className="text-[10px] font-mono text-primary hover:underline"
+                                  >
+                                    View full transcript →
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}
