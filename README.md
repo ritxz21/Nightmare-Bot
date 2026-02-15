@@ -2,7 +2,7 @@
 
 **An AI-powered voice interviewer that stress-tests whether you truly understand a concept** by detecting knowledge gaps, vague language, and bluffing — in real time.
 
-Live demo: https://mind-duelist.lovable.app/ :contentReference[oaicite:0]{index=0}
+Live demo: https://mind-duelist.lovable.app/
 
 ---
 
