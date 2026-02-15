@@ -1,73 +1,115 @@
-# Welcome to your Lovable project
+# Nightmare Bot (DeepFake Interviewer) 😈🎙️
 
-## Project info
+**An AI-powered voice interviewer that stress-tests whether you truly understand a concept** by detecting knowledge gaps, vague language, and bluffing — in real time.
 
-**URL**: [App](https://mind-duelist.lovable.app/)
+Live demo: https://mind-duelist.lovable.app/ :contentReference[oaicite:0]{index=0}
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## What it does
 
-**Use Lovable**
+Nightmare Bot isn’t a friendly chatbot. It’s an **adversarial interviewer**:
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- You pick a topic (Neural Networks / Databases / System Design)
+- You explain out loud (voice interview)
+- The system analyzes your answer for:
+  - **Missing core concepts**
+  - **Shallow name-dropping**
+  - **Vagueness + confidence language**
+  - A **bluff probability score**
+- It then **grills you** with targeted follow-ups and updates your **live knowledge map**.
 
-Changes made via Lovable will be committed automatically to this repo.
+The goal: make “I kinda know it” impossible.
 
-**Use your preferred IDE**
+---
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Core Features
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### 🎤 Voice Interviewer (ElevenLabs)
+- Real-time interview experience using ElevenLabs conversation flow.
+- Follow-up questions are injected dynamically based on your last answer.
 
-Follow these steps:
+### 🧠 Gap Detection Engine (LLM)
+After each user response, the backend returns structured analysis:
+- concepts mentioned clearly vs shallowly
+- concepts missing
+- vagueness + depth scores
+- bluff probability
+- next adversarial follow-up question :contentReference[oaicite:1]{index=1}
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### 📊 Bluff Score Meter
+- Updates after each response
+- Color transitions: **Green → Yellow → Red**
+- Calls you out when your confidence rises but precision drops
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+### 🗺️ Live Knowledge Map
+- Hardcoded concept checklist per topic
+- Nodes update live:
+  - 🟢 clear
+  - 🟡 shallow
+  - 🔴 missing :contentReference[oaicite:2]{index=2}
 
-# Step 3: Install the necessary dependencies.
-npm i
+### 💾 Persistent Session Memory (Supabase)
+Each session stores:
+- transcript
+- bluff history over time
+- concept coverage
+- session status (in progress/disconnected/completed) :contentReference[oaicite:3]{index=3}
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+This enables callbacks like:
+> “Earlier you didn’t mention X. Has your understanding changed?”
 
-**Edit a file directly in GitHub**
+### 🏆 Extras
+- Leaderboard mode
+- Resume grilling + JD prep flows (WIP / bonus hackathon features)
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+---
 
-**Use GitHub Codespaces**
+## Tech Stack
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+- **Frontend:** Vite + React + TypeScript + Tailwind + shadcn-ui :contentReference[oaicite:4]{index=4}
+- **Voice:** ElevenLabs via `@elevenlabs/react` :contentReference[oaicite:5]{index=5}
+- **Backend / Memory:** Supabase (DB + Auth + Edge Functions) :contentReference[oaicite:6]{index=6}
+- **Charts:** Recharts :contentReference[oaicite:7]{index=7}
+- **Animation:** Framer Motion :contentReference[oaicite:8]{index=8}
 
-## What technologies are used for this project?
+---
 
-This project is built with:
+## Repo Structure (high level)
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- `src/pages/Index.tsx` — landing page + topic selection :contentReference[oaicite:9]{index=9}  
+- `src/pages/Interview.tsx` — voice interview, transcript, analysis loop, knowledge map updates :contentReference[oaicite:10]{index=10}  
+- `src/integrations/supabase/` — Supabase client + typed DB integration :contentReference[oaicite:11]{index=11}  
+- `supabase/` — Supabase project config :contentReference[oaicite:12]{index=12}  
 
-## How can I deploy this project?
+---
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## How the “Interview Loop” works
 
-## Can I connect a custom domain to my Lovable project?
+1. User speaks → transcript accumulates
+2. Transcript is sent to Supabase Edge Function: `analyze-response`
+3. LLM returns analysis JSON (missing/shallow/clear + follow-up question)
+4. UI updates:
+   - Bluff meter
+   - Knowledge map grid
+5. Follow-up question is sent back to ElevenLabs via contextual update :contentReference[oaicite:13]{index=13}
 
-Yes, you can!
+---
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Getting Started (Local Dev)
+
+### Prerequisites
+- Node.js 18+
+- A Supabase project (or the one configured for this repo)
+- ElevenLabs agent set up in the ElevenLabs dashboard
+- Supabase Edge Functions deployed:
+  - `analyze-response`
+  - `elevenlabs-signed-url` :contentReference[oaicite:14]{index=14}
+
+### 1) Install
+```bash
+git clone https://github.com/ritxz21/Nightmare-Bot.git
+cd Nightmare-Bot
+npm install
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
